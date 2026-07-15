@@ -1,10 +1,12 @@
-import { AdminPlaceholder } from "@/components/pages/AdminPlaceholder";
+import { UsersKycListClient } from "@/components/users-kyc/UsersKycListClient";
 
 export default function PersonalUsersPage() {
   return (
-    <AdminPlaceholder
+    <UsersKycListClient
+      role="INDIVIDUAL"
       title="Personal Users"
-      description="Browse and manage individual customer accounts."
+      description="Review individual customer KYC applications."
+      detailBasePath="/personal-users"
     />
   );
 }

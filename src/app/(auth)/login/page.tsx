@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import R2GLogo from "../../../../assets/logos/R2GLogo.png";
+import flexLogo from "../../../../assets/logos/flex-logo.png";
 import { AdminLoadingOverlay } from "@/components/ui/AdminLoadingOverlay";
 import { PasswordField } from "@/components/auth/PasswordField";
 import {
@@ -93,8 +93,8 @@ export default function AdminLoginPage() {
       <div className="w-full max-w-md bg-white border border-slate-200 rounded-xl shadow-sm p-8">
         <div className="flex justify-center mb-6">
           <Image
-            src={R2GLogo}
-            alt="Remit2Globe"
+            src={flexLogo}
+            alt="Flex Money"
             priority
             className="object-contain w-[125px]"
           />
@@ -110,7 +110,7 @@ export default function AdminLoginPage() {
           Welcome back
         </h1>
         <p className="text-sm text-slate-500 mb-6 text-center">
-          Sign in to the Remit2Globe admin console
+          Sign in to the Flex Money admin console
         </p>
 
         <form onSubmit={handleSubmit} noValidate className="space-y-4">

@@ -4,35 +4,93 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import R2GLogo from "../../../assets/logos/R2GLogo.png";
+import flexLogo from "../../../assets/logos/flex-logo.png";
 import {
   LayoutDashboard,
-  Send,
-  Settings,
-  Wallet,
-  FileText,
-  User,
-  Building2,
   Shield,
-  KeyRound,
   LogOut,
+  Globe,
+  Percent,
+  UserCheck,
+  CreditCard,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 
-const navItems: {
-  label: string;
-  href: string;
-  icon: typeof LayoutDashboard;
-}[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Send Transfer", href: "/send-transfer", icon: Send },
-  { label: "Settings", href: "/settings", icon: Settings },
-  { label: "Finance", href: "/finance", icon: Wallet },
-  { label: "Reports", href: "/reports", icon: FileText },
-  { label: "Personal Users", href: "/personal-users", icon: User },
-  { label: "Corporate Users", href: "/corporate-users", icon: Building2 },
-  { label: "Roles", href: "/roles", icon: Shield },
-  { label: "Password", href: "/password", icon: KeyRound },
-];
+const usersKycNav = {
+  label: "Users KYC",
+  icon: UserCheck,
+  basePath: "/personal-users",
+  items: [
+    { label: "Personal Users", href: "/personal-users" },
+    { label: "Corporate Users", href: "/corporate-users" },
+    { label: "Remittance Partners", href: "/remittance-partners" },
+  ],
+} as const;
+
+const HIDDEN_RATE_SETTINGS_HREFS = new Set([
+  "/rate-settings/exchange-rates",
+  "/rate-settings/partners-rate-engine",
+]);
+
+const rateSettingsNav = {
+  label: "Rate settings",
+  icon: Percent,
+  basePath: "/rate-settings",
+  items: [
+    {
+      label: "Currency Pair",
+      href: "/rate-settings/currency-pair",
+      superAdminOnly: true,
+    },
+    { label: "Exchange rates", href: "/rate-settings/exchange-rates" },
+    {
+      label: "Partners Rate Engine",
+      href: "/rate-settings/partners-rate-engine",
+    },
+    { label: "Tariffs", href: "/rate-settings/tariffs" },
+  ],
+} as const;
+
+const paymentsNav = {
+  label: "Remittance",
+  icon: CreditCard,
+  basePath: "/payments",
+  items: [
+    {
+      label: "Outbound List (Individuals)",
+      href: "/payments/outbound/individuals",
+    },
+    {
+      label: "Outbound List (Corporates)",
+      href: "/payments/outbound/corporates",
+    },
+  ],
+} as const;
+
+function navLinkClass(active: boolean) {
+  return `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+    active
+      ? "bg-indigo-50 text-indigo-700"
+      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+  }`;
+}
+
+function submenuButtonClass(active: boolean) {
+  return `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+    active
+      ? "bg-indigo-50 text-indigo-700"
+      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+  }`;
+}
+
+function submenuLinkClass(active: boolean) {
+  return `block px-3 py-2 rounded-lg text-sm transition-colors ${
+    active
+      ? "bg-indigo-50 text-indigo-700 font-medium"
+      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+  }`;
+}
 
 export default function AdminDashboardLayoutClient({
   children,
@@ -40,7 +98,13 @@ export default function AdminDashboardLayoutClient({
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [usersKycOpen, setUsersKycOpen] = useState(false);
+  const [rateSettingsOpen, setRateSettingsOpen] = useState(false);
+  const [paymentsOpen, setPaymentsOpen] = useState(false);
   const [adminLabel, setAdminLabel] = useState("Administrator");
+  const [adminRole, setAdminRole] = useState<"ADMIN" | "SUPER_ADMIN" | null>(
+    null,
+  );
   const pathname = usePathname();
   const router = useRouter();
 
@@ -55,8 +119,12 @@ export default function AdminDashboardLayoutClient({
           data?.data?.admin?.email ||
           data?.data?.admin?.username ||
           data?.data?.admin?.name;
+        const role = data?.data?.admin?.role;
         if (!cancelled && typeof label === "string" && label.trim()) {
           setAdminLabel(label.trim());
+        }
+        if (!cancelled && (role === "ADMIN" || role === "SUPER_ADMIN")) {
+          setAdminRole(role);
         }
       } catch {
         /* ignore */
@@ -67,6 +135,31 @@ export default function AdminDashboardLayoutClient({
     };
   }, []);
 
+  const isUsersKycActive =
+    pathname.startsWith("/personal-users") ||
+    pathname.startsWith("/corporate-users") ||
+    pathname.startsWith("/remittance-partners");
+  const isRateSettingsActive = pathname.startsWith(rateSettingsNav.basePath);
+  const isPaymentsActive = pathname.startsWith(paymentsNav.basePath);
+
+  useEffect(() => {
+    if (isUsersKycActive) {
+      setUsersKycOpen(true);
+    }
+  }, [isUsersKycActive]);
+
+  useEffect(() => {
+    if (isRateSettingsActive) {
+      setRateSettingsOpen(true);
+    }
+  }, [isRateSettingsActive]);
+
+  useEffect(() => {
+    if (isPaymentsActive) {
+      setPaymentsOpen(true);
+    }
+  }, [isPaymentsActive]);
+
   async function handleSignOut() {
     await fetch("/api/auth/session", {
       method: "DELETE",
@@ -76,8 +169,15 @@ export default function AdminDashboardLayoutClient({
     router.refresh();
   }
 
-  const avatarInitial =
-    adminLabel[0]?.toUpperCase() || "A";
+  const isDashboardActive =
+    pathname === "/dashboard" || pathname.startsWith("/dashboard/");
+  const isManageCountryActive =
+    pathname === "/manage-country" || pathname.startsWith("/manage-country/");
+  const isRolesActive = pathname === "/roles" || pathname.startsWith("/roles/");
+
+  const roleLabel = adminRole === "SUPER_ADMIN" ? "Super Admin" : "Admin";
+
+  const avatarInitial = adminLabel[0]?.toUpperCase() || "A";
 
   return (
     <div className="min-h-screen bg-slate-50 flex">
@@ -92,8 +192,8 @@ export default function AdminDashboardLayoutClient({
         <div className="border-b border-slate-200">
           <div className="flex flex-col items-center mb-4 mt-4 gap-2">
             <Image
-              src={R2GLogo}
-              alt="Remit2Globe"
+              src={flexLogo}
+              alt="Flex Money"
               priority
               className="object-contain w-[125px]"
             />
@@ -104,32 +204,164 @@ export default function AdminDashboardLayoutClient({
         </div>
 
         <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const isActive =
-              pathname === item.href ||
-              (item.href !== "/dashboard" && pathname.startsWith(item.href));
+          <Link
+            href="/dashboard"
+            onClick={() => setSidebarOpen(false)}
+            className={navLinkClass(isDashboardActive)}
+          >
+            <span className="text-base shrink-0">
+              <LayoutDashboard className="w-5 h-5" />
+            </span>
+            Dashboard
+          </Link>
 
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setSidebarOpen(false)}
-                className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-                  ${
-                    isActive
-                      ? "bg-indigo-50 text-indigo-700"
-                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                  }
-                `}
-              >
-                <span className="text-base shrink-0">
-                  <item.icon className="w-5 h-5" />
-                </span>
-                {item.label}
-              </Link>
-            );
-          })}
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => setUsersKycOpen((open) => !open)}
+              className={submenuButtonClass(isUsersKycActive)}
+            >
+              <span className="text-base shrink-0">
+                <usersKycNav.icon className="w-5 h-5" />
+              </span>
+              <span className="flex-1 text-left">{usersKycNav.label}</span>
+              {usersKycOpen ? (
+                <ChevronDown className="w-4 h-4 shrink-0 text-slate-400" />
+              ) : (
+                <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" />
+              )}
+            </button>
+
+            {usersKycOpen && (
+              <div className="mt-1 ml-4 pl-3 border-l border-slate-200 space-y-0.5">
+                {usersKycNav.items.map((sub) => {
+                  const isSubActive =
+                    pathname === sub.href ||
+                    pathname.startsWith(`${sub.href}/`);
+
+                  return (
+                    <Link
+                      key={sub.href}
+                      href={sub.href}
+                      onClick={() => setSidebarOpen(false)}
+                      className={submenuLinkClass(isSubActive)}
+                    >
+                      {sub.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => setPaymentsOpen((open) => !open)}
+              className={submenuButtonClass(isPaymentsActive)}
+            >
+              <span className="text-base shrink-0">
+                <paymentsNav.icon className="w-5 h-5" />
+              </span>
+              <span className="flex-1 text-left">{paymentsNav.label}</span>
+              {paymentsOpen ? (
+                <ChevronDown className="w-4 h-4 shrink-0 text-slate-400" />
+              ) : (
+                <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" />
+              )}
+            </button>
+
+            {paymentsOpen && (
+              <div className="mt-1 ml-4 pl-3 border-l border-slate-200 space-y-0.5">
+                {paymentsNav.items.map((sub) => {
+                  const isSubActive =
+                    pathname === sub.href ||
+                    pathname.startsWith(`${sub.href}/`);
+
+                  return (
+                    <Link
+                      key={sub.href}
+                      href={sub.href}
+                      onClick={() => setSidebarOpen(false)}
+                      className={submenuLinkClass(isSubActive)}
+                    >
+                      {sub.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => setRateSettingsOpen((open) => !open)}
+              className={submenuButtonClass(isRateSettingsActive)}
+            >
+              <span className="text-base shrink-0">
+                <rateSettingsNav.icon className="w-5 h-5" />
+              </span>
+              <span className="flex-1 text-left">{rateSettingsNav.label}</span>
+              {rateSettingsOpen ? (
+                <ChevronDown className="w-4 h-4 shrink-0 text-slate-400" />
+              ) : (
+                <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" />
+              )}
+            </button>
+
+            {rateSettingsOpen && (
+              <div className="mt-1 ml-4 pl-3 border-l border-slate-200 space-y-0.5">
+                {rateSettingsNav.items
+                  .filter(
+                    (sub) =>
+                      !HIDDEN_RATE_SETTINGS_HREFS.has(sub.href) &&
+                      (!("superAdminOnly" in sub && sub.superAdminOnly) ||
+                        adminRole === "SUPER_ADMIN"),
+                  )
+                  .map((sub) => {
+                    const isSubActive =
+                      pathname === sub.href ||
+                      pathname.startsWith(`${sub.href}/`);
+
+                    return (
+                      <Link
+                        key={sub.href}
+                        href={sub.href}
+                        onClick={() => setSidebarOpen(false)}
+                        className={submenuLinkClass(isSubActive)}
+                      >
+                        {sub.label}
+                      </Link>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+
+          <Link
+            href="/manage-country"
+            onClick={() => setSidebarOpen(false)}
+            className={navLinkClass(isManageCountryActive)}
+          >
+            <span className="text-base shrink-0">
+              <Globe className="w-5 h-5" />
+            </span>
+            Manage Country
+          </Link>
+
+          {adminRole === "SUPER_ADMIN" ? (
+            <Link
+              href="/roles"
+              onClick={() => setSidebarOpen(false)}
+              className={navLinkClass(isRolesActive)}
+            >
+              <span className="text-base shrink-0">
+                <Shield className="w-5 h-5" />
+              </span>
+              Users &amp; Roles
+            </Link>
+          ) : null}
         </nav>
       </aside>
 
@@ -166,7 +398,7 @@ export default function AdminDashboardLayoutClient({
                 <p className="text-sm font-medium text-slate-900 truncate max-w-[12rem] md:max-w-[16rem]">
                   {adminLabel}
                 </p>
-                <p className="text-xs text-slate-500 truncate">Admin</p>
+                <p className="text-xs text-slate-500 truncate">{roleLabel}</p>
               </div>
             </div>
             <button

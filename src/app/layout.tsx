@@ -8,8 +8,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Remit2Globe Admin",
-  description: "Admin tools for Remit2Globe",
+  title: "Flex Money Admin",
+  description: "Admin tools for Flex Money",
 };
 
 export default function RootLayout({

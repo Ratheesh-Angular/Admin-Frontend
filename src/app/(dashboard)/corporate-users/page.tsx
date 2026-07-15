@@ -1,10 +1,12 @@
-import { AdminPlaceholder } from "@/components/pages/AdminPlaceholder";
+import { UsersKycListClient } from "@/components/users-kyc/UsersKycListClient";
 
 export default function CorporateUsersPage() {
   return (
-    <AdminPlaceholder
+    <UsersKycListClient
+      role="CORPORATE"
       title="Corporate Users"
-      description="Browse and manage business customer accounts."
+      description="Review corporate customer KYC applications."
+      detailBasePath="/corporate-users"
     />
   );
 }
