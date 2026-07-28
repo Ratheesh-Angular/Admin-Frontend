@@ -33,6 +33,8 @@ const HIDDEN_RATE_SETTINGS_HREFS = new Set([
   "/rate-settings/partners-rate-engine",
 ]);
 
+const HIDDEN_USERS_KYC_HREFS = new Set(["/remittance-partners"]);
+
 const rateSettingsNav = {
   label: "Rate settings",
   icon: Percent,
@@ -137,8 +139,7 @@ export default function AdminDashboardLayoutClient({
 
   const isUsersKycActive =
     pathname.startsWith("/personal-users") ||
-    pathname.startsWith("/corporate-users") ||
-    pathname.startsWith("/remittance-partners");
+    pathname.startsWith("/corporate-users");
   const isRateSettingsActive = pathname.startsWith(rateSettingsNav.basePath);
   const isPaymentsActive = pathname.startsWith(paymentsNav.basePath);
 
@@ -234,7 +235,9 @@ export default function AdminDashboardLayoutClient({
 
             {usersKycOpen && (
               <div className="mt-1 ml-4 pl-3 border-l border-slate-200 space-y-0.5">
-                {usersKycNav.items.map((sub) => {
+                {usersKycNav.items
+                  .filter((sub) => !HIDDEN_USERS_KYC_HREFS.has(sub.href))
+                  .map((sub) => {
                   const isSubActive =
                     pathname === sub.href ||
                     pathname.startsWith(`${sub.href}/`);

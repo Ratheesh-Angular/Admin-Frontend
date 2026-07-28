@@ -1,5 +1,22 @@
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_RE = /^[a-zA-Z0-9._-]{3,32}$/;
+const ALLOWED_ADMIN_EMAIL_DOMAINS = ["instaremit.co", "flex-money.com"] as const;
+
+export function validateAdminEmailDomain(email: string): string | null {
+  const trimmed = email.trim().toLowerCase();
+  if (!trimmed) return "Email is required.";
+  if (!EMAIL_RE.test(trimmed)) return "Enter a valid email address.";
+  const domain = trimmed.split("@")[1];
+  if (
+    !domain ||
+    !ALLOWED_ADMIN_EMAIL_DOMAINS.includes(
+      domain as (typeof ALLOWED_ADMIN_EMAIL_DOMAINS)[number],
+    )
+  ) {
+    return "Email must use @instaremit.co or @flex-money.com.";
+  }
+  return null;
+}
 
 export function validateAdminIdentifier(value: string): string | null {
   const trimmed = value.trim();

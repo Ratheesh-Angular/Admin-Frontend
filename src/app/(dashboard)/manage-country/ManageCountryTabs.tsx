@@ -8,6 +8,8 @@ import {
 
 type TabId = "registration" | "platform";
 
+const HIDDEN_TABS = new Set<TabId>(["registration"]);
+
 function parseFlexRows(res: { data?: unknown }): CountryRow[] {
   const flexBody = res?.data;
   const inner = flexBody as { data?: { data?: unknown } } | undefined;
@@ -36,7 +38,7 @@ function parseCatalogSelection(res: { data?: unknown }): Set<string> {
 }
 
 export function ManageCountryTabs() {
-  const [tab, setTab] = useState<TabId>("registration");
+  const [tab, setTab] = useState<TabId>("platform");
   const [rows, setRows] = useState<CountryRow[]>([]);
   const [registrationSelected, setRegistrationSelected] = useState<Set<string>>(
     new Set(),
@@ -164,22 +166,24 @@ export function ManageCountryTabs() {
     }
   }
 
-  const tabs: { id: TabId; label: string; description: string }[] = [
-    {
-      id: "registration",
-      label: "Registration countries",
-      description:
-        "Controls which countries appear on the customer registration page.",
-    },
-    {
-      id: "platform",
-      label: "Platform countries",
-      description:
-        "Controls the country catalog used for beneficiaries, currency pairs, tariffs, and other payment features.",
-    },
-  ];
+  const tabs = (
+    [
+      {
+        id: "registration" as const,
+        label: "Registration countries",
+        description:
+          "Controls which countries appear on the customer registration page.",
+      },
+      {
+        id: "platform" as const,
+        label: "Platform countries",
+        description:
+          "Controls the country catalog used for beneficiaries, currency pairs, tariffs, and other payment features.",
+      },
+    ] satisfies { id: TabId; label: string; description: string }[]
+  ).filter((t) => !HIDDEN_TABS.has(t.id));
 
-  const activeTab = tabs.find((t) => t.id === tab)!;
+  const activeTab = tabs.find((t) => t.id === tab) ?? tabs[0]!;
 
   return (
     <div className="space-y-6">

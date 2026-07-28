@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AdminScopeClient } from "@/lib/admin-currency-pair-access";
 
 export type AdminSession = {
+  id: string;
   role: "SUPER_ADMIN" | "ADMIN";
   countryCodes: string[];
 };
@@ -27,6 +28,7 @@ export function useAdminSession() {
         return;
       }
       setSession({
+        id: String(admin.id ?? ""),
         role: admin.role === "SUPER_ADMIN" ? "SUPER_ADMIN" : "ADMIN",
         countryCodes: Array.isArray(admin.countryCodes)
           ? admin.countryCodes.map((c: string) => String(c).trim().toUpperCase())

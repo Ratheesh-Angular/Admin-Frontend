@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Eye } from "lucide-react";
 import { AdminDataTable } from "@/components/ui/AdminDataTable";
-import { KycBadge, fmtDate } from "./kyc-ui";
+import { fmtDateTime } from "@/lib/payments/transfer-format";
+import { KycBadge } from "./kyc-ui";
 
 export type UserListRow = {
   id: string;
@@ -108,7 +109,7 @@ export function UsersKycListClient({
         id: "updated",
         header: "Last updated",
         searchText: (row: UserListRow) => row.updatedAt,
-        cell: (row: UserListRow) => fmtDate(row.updatedAt),
+        cell: (row: UserListRow) => fmtDateTime(row.updatedAt),
       },
       {
         id: "actions",

@@ -174,12 +174,12 @@ export default function AdminLoginPage() {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-slate-500">
+        {/* <p className="mt-6 text-center text-sm text-slate-500">
           Need an admin account?{" "}
           <Link href="/register" className={adminLink}>
             Create one
           </Link>
-        </p>
+        </p> */}
       </div>
     </div>
   );

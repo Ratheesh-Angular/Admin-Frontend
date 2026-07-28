@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -12,11 +12,8 @@ import {
   User,
   Wallet,
 } from "lucide-react";
-import {
-  DetailRow,
-  SectionCard,
-  TransferStatusBadge,
-} from "./transfer-ui";
+import { DetailRow, SectionCard, TransferStatusBadge } from "./transfer-ui";
+import { AppDialog } from "@/components/ui/AppDialog";
 import {
   beneficiaryName,
   fmtDate,
@@ -25,6 +22,7 @@ import {
   labelEnum,
 } from "@/lib/payments/transfer-format";
 import type { OutboundTransferDetail } from "@/lib/payments/outbound-transfer-types";
+import { resolveTransferFailureDisplay } from "@/lib/payments/flex-response-codes";
 
 type TabId =
   | "overview"
@@ -56,6 +54,12 @@ const TABS: { id: TabId; label: string; icon: typeof FileText }[] = [
   { id: "accept", label: "Accept transfer", icon: CheckCircle2 },
 ];
 
+const ACCEPTABLE_ACCEPT_STATUSES = new Set([
+  "PENDING_PAYMENT",
+  "PAYMENT_SUBMITTED",
+  "UNDER_REVIEW",
+]);
+
 function extractPayoutDebug(data: Record<string, unknown>): PayoutDebug {
   const inner =
     data.data && typeof data.data === "object"
@@ -81,10 +85,12 @@ export function OutboundTransferDetailClient({
   const [tab, setTab] = useState<TabId>("overview");
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
+  const [confirmAcceptOpen, setConfirmAcceptOpen] = useState(false);
   const [payoutDebug, setPayoutDebug] = useState<PayoutDebug | null>(null);
-  const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(
-    null,
-  );
+  const [message, setMessage] = useState<{
+    kind: "ok" | "err";
+    text: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -116,15 +122,25 @@ export function OutboundTransferDetailClient({
     void load();
   }, [load]);
 
+  const canAccept =
+    transfer &&
+    transfer.payInMethod === "BANK_TRANSFER" &&
+    ACCEPTABLE_ACCEPT_STATUSES.has(transfer.status) &&
+    !transfer.payoutInitiatedAt &&
+    Boolean(transfer.beneficiary);
+
+  const payoutAlreadyInitiated =
+    transfer &&
+    transfer.payInMethod === "BANK_TRANSFER" &&
+    !canAccept &&
+    Boolean(transfer.beneficiary) &&
+    (Boolean(transfer.payoutInitiatedAt) ||
+      transfer.status === "PROCESSING" ||
+      transfer.status === "COMPLETED" ||
+      transfer.status === "FAILED");
+
   async function acceptTransfer() {
-    if (!transfer) return;
-    if (
-      !window.confirm(
-        `Accept and release payout for ${transfer.referenceCode}? This initiates the outbound transfer to the beneficiary.`,
-      )
-    ) {
-      return;
-    }
+    if (!transfer || !canAccept) return;
 
     setActing(true);
     setMessage(null);
@@ -144,6 +160,7 @@ export function OutboundTransferDetailClient({
           kind: "ok",
           text: `Transfer accepted for ${transfer.referenceCode}. Payout has been initiated.`,
         });
+        setConfirmAcceptOpen(false);
         await load();
       } else {
         setMessage({
@@ -160,13 +177,19 @@ export function OutboundTransferDetailClient({
     }
   }
 
-  const canAccept =
-    transfer &&
-    transfer.status !== "COMPLETED" &&
-    transfer.status !== "CANCELLED" &&
-    Boolean(transfer.beneficiary);
+  const visibleTabs = useMemo(() => {
+    if (transfer?.payInMethod === "BANK_TRANSFER") return TABS;
+    return TABS.filter((t) => t.id !== "accept");
+  }, [transfer?.payInMethod]);
+
+  useEffect(() => {
+    if (tab === "accept" && transfer?.payInMethod !== "BANK_TRANSFER") {
+      setTab("overview");
+    }
+  }, [tab, transfer?.payInMethod]);
 
   return (
+    <>
     <div className="max-w-5xl space-y-6">
       <div>
         <Link
@@ -233,7 +256,7 @@ export function OutboundTransferDetailClient({
               className="flex gap-1 overflow-x-auto pb-px"
               aria-label="Transfer sections"
             >
-              {TABS.map((t) => {
+              {visibleTabs.map((t) => {
                 const Icon = t.icon;
                 const active = tab === t.id;
                 return (
@@ -256,14 +279,20 @@ export function OutboundTransferDetailClient({
           </div>
 
           {tab === "overview" && (
-            <SectionCard title="Transfer overview" description="Status and lifecycle">
+            <SectionCard
+              title="Transfer overview"
+              description="Status and lifecycle"
+            >
               <dl>
                 <DetailRow label="Reference" value={transfer.referenceCode} />
                 <DetailRow
                   label="Status"
                   value={<TransferStatusBadge status={transfer.status} />}
                 />
-                <DetailRow label="Current step" value={String(transfer.currentStep)} />
+                <DetailRow
+                  label="Current step"
+                  value={String(transfer.currentStep)}
+                />
                 <DetailRow
                   label="Corridor"
                   value={`${transfer.senderCountryIso2 ?? "—"} → ${transfer.recipientCountryLabel || transfer.recipientCountryIso2 || "—"}`}
@@ -272,17 +301,30 @@ export function OutboundTransferDetailClient({
                   label="Pay-in method"
                   value={labelEnum(transfer.payInMethod)}
                 />
-                <DetailRow label="Payer phone" value={transfer.payerPhone} />
-                <DetailRow
-                  label="STK reference"
-                  value={transfer.flexStkReference}
-                />
-                <DetailRow label="STK status" value={transfer.flexStkStatus} />
+                {transfer.payInMethod === "MOBILE_MONEY" ? (
+                  <>
+                    <DetailRow
+                      label="Payer phone"
+                      value={transfer.payerPhone}
+                    />
+                    <DetailRow
+                      label="STK reference"
+                      value={transfer.flexStkReference}
+                    />
+                    <DetailRow
+                      label="STK status"
+                      value={transfer.flexStkStatus}
+                    />
+                  </>
+                ) : null}
                 <DetailRow
                   label="Payout reference"
                   value={transfer.flexPayoutReference}
                 />
-                <DetailRow label="Payout status" value={transfer.flexPayoutStatus} />
+                <DetailRow
+                  label="Payout status"
+                  value={transfer.flexPayoutStatus}
+                />
                 <DetailRow
                   label="Payment confirmed"
                   value={fmtDateTime(transfer.paymentConfirmedAt)}
@@ -292,22 +334,33 @@ export function OutboundTransferDetailClient({
                   value={fmtDateTime(transfer.payoutInitiatedAt)}
                 />
                 <DetailRow
-                  label="Completed"
+                  label="TXN Completed"
                   value={fmtDateTime(transfer.completedAt)}
                 />
-                <DetailRow label="Created" value={fmtDateTime(transfer.createdAt)} />
-                <DetailRow label="Updated" value={fmtDateTime(transfer.updatedAt)} />
                 <DetailRow
-                  label="Failure reason"
-                  value={transfer.failureReason}
-                  wide
+                  label="TXN Created"
+                  value={fmtDateTime(transfer.createdAt)}
                 />
+                <DetailRow
+                  label="TXN Updated"
+                  value={fmtDateTime(transfer.updatedAt)}
+                />
+                {transfer.status === "FAILED" ? (
+                  <DetailRow
+                    label="Failure reason"
+                    value={resolveTransferFailureDisplay(transfer)}
+                    wide
+                  />
+                ) : null}
               </dl>
             </SectionCard>
           )}
 
           {tab === "amounts" && (
-            <SectionCard title="Amounts & quote" description="Send, receive, fees, and rate">
+            <SectionCard
+              title="Amounts & quote"
+              description="Send, receive, fees, and rate"
+            >
               <dl>
                 <DetailRow
                   label="You send"
@@ -315,19 +368,28 @@ export function OutboundTransferDetailClient({
                 />
                 <DetailRow
                   label="Recipient gets"
-                  value={fmtMoney(transfer.receiveAmount, transfer.receiveCurrency)}
+                  value={fmtMoney(
+                    transfer.receiveAmount,
+                    transfer.receiveCurrency,
+                  )}
                 />
                 <DetailRow
                   label="Fee"
                   value={fmtMoney(transfer.feeAmount, transfer.payCurrency)}
                 />
-                <DetailRow label="FX rate" value={transfer.fxRateSnapshot ?? "—"} />
+                <DetailRow
+                  label="FX rate"
+                  value={transfer.fxRateSnapshot ?? "—"}
+                />
                 <DetailRow
                   label="Quote expires"
                   value={fmtDateTime(transfer.quoteExpiresAt)}
                 />
                 <DetailRow label="Pay currency" value={transfer.payCurrency} />
-                <DetailRow label="Receive currency" value={transfer.receiveCurrency} />
+                <DetailRow
+                  label="Receive currency"
+                  value={transfer.receiveCurrency}
+                />
               </dl>
             </SectionCard>
           )}
@@ -347,8 +409,14 @@ export function OutboundTransferDetailClient({
                     label="Delivery channel"
                     value={labelEnum(transfer.beneficiary.deliveryChannel)}
                   />
-                  <DetailRow label="Country" value={transfer.beneficiary.country} />
-                  <DetailRow label="Bank" value={transfer.beneficiary.bankName} />
+                  <DetailRow
+                    label="Country"
+                    value={transfer.beneficiary.country}
+                  />
+                  <DetailRow
+                    label="Bank"
+                    value={transfer.beneficiary.bankName}
+                  />
                   <DetailRow
                     label="Flex bank"
                     value={transfer.beneficiary.flexBankName}
@@ -357,14 +425,23 @@ export function OutboundTransferDetailClient({
                     label="Flex bank code"
                     value={transfer.beneficiary.flexBankCode}
                   />
-                  <DetailRow label="Branch" value={transfer.beneficiary.branchName} />
+                  <DetailRow
+                    label="Branch"
+                    value={transfer.beneficiary.branchName}
+                  />
                   <DetailRow
                     label="Account number"
                     value={transfer.beneficiary.accountNumber}
                   />
                   <DetailRow label="IBAN" value={transfer.beneficiary.iban} />
-                  <DetailRow label="SWIFT / BIC" value={transfer.beneficiary.swiftBic} />
-                  <DetailRow label="Sort code" value={transfer.beneficiary.sortCode} />
+                  <DetailRow
+                    label="SWIFT / BIC"
+                    value={transfer.beneficiary.swiftBic}
+                  />
+                  <DetailRow
+                    label="Sort code"
+                    value={transfer.beneficiary.sortCode}
+                  />
                   <DetailRow
                     label="Routing number"
                     value={transfer.beneficiary.routingNumber}
@@ -393,7 +470,9 @@ export function OutboundTransferDetailClient({
                   />
                 </dl>
               ) : (
-                <p className="text-sm text-slate-500 py-4">No beneficiary on file.</p>
+                <p className="text-sm text-slate-500 py-4">
+                  No beneficiary on file.
+                </p>
               )}
             </SectionCard>
           )}
@@ -457,11 +536,16 @@ export function OutboundTransferDetailClient({
                 description="Documents uploaded for pay-in"
               >
                 {transfer.paymentProofs.length === 0 ? (
-                  <p className="text-sm text-slate-500 py-4">No payment proofs.</p>
+                  <p className="text-sm text-slate-500 py-4">
+                    No payment proofs.
+                  </p>
                 ) : (
                   <ul className="divide-y divide-slate-100">
                     {transfer.paymentProofs.map((file) => (
-                      <li key={file.id} className="py-3 flex items-center justify-between gap-3">
+                      <li
+                        key={file.id}
+                        className="py-3 flex items-center justify-between gap-3"
+                      >
                         <div>
                           <p className="text-sm font-medium text-slate-900">
                             {file.fileName}
@@ -490,11 +574,16 @@ export function OutboundTransferDetailClient({
                 description="Invoices and bills of lading"
               >
                 {transfer.supportingDocuments.length === 0 ? (
-                  <p className="text-sm text-slate-500 py-4">No supporting documents.</p>
+                  <p className="text-sm text-slate-500 py-4">
+                    No supporting documents.
+                  </p>
                 ) : (
                   <ul className="divide-y divide-slate-100">
                     {transfer.supportingDocuments.map((file) => (
-                      <li key={file.id} className="py-3 flex items-center justify-between gap-3">
+                      <li
+                        key={file.id}
+                        className="py-3 flex items-center justify-between gap-3"
+                      >
                         <div>
                           <p className="text-sm font-medium text-slate-900">
                             {labelEnum(file.docType ?? null)} — {file.fileName}
@@ -520,7 +609,7 @@ export function OutboundTransferDetailClient({
             </div>
           )}
 
-          {tab === "accept" && (
+          {tab === "accept" && transfer.payInMethod === "BANK_TRANSFER" && (
             <SectionCard
               title="Accept transfer"
               description="Release the outbound payout to the beneficiary"
@@ -532,8 +621,8 @@ export function OutboundTransferDetailClient({
                   </div>
                   <div className="text-sm text-slate-600 leading-relaxed">
                     <p>
-                      Review all tabs before accepting. This action initiates the
-                      Flex payout for{" "}
+                      Review all tabs before accepting. This action initiates
+                      the Flex payout for{" "}
                       <span className="font-medium text-slate-900">
                         {fmtMoney(transfer.payAmount, transfer.payCurrency)}
                       </span>{" "}
@@ -548,6 +637,11 @@ export function OutboundTransferDetailClient({
                         This transfer is already completed.
                       </p>
                     ) : null}
+                    {payoutAlreadyInitiated ? (
+                      <p className="mt-2 text-emerald-700 font-medium">
+                        Payout has already been initiated for this transfer.
+                      </p>
+                    ) : null}
                     {!transfer.beneficiary ? (
                       <p className="mt-2 text-red-700 font-medium">
                         Cannot accept — no beneficiary attached.
@@ -560,7 +654,7 @@ export function OutboundTransferDetailClient({
                   <button
                     type="button"
                     disabled={acting || !canAccept}
-                    onClick={() => void acceptTransfer()}
+                    onClick={() => setConfirmAcceptOpen(true)}
                     className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-5 h-11 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <CheckCircle2 className="w-4 h-4" />
@@ -594,5 +688,24 @@ export function OutboundTransferDetailClient({
         </>
       )}
     </div>
+
+    <AppDialog
+      open={confirmAcceptOpen}
+      variant="confirm"
+      title="Accept transfer?"
+      message={
+        transfer
+          ? `Release payout for ${transfer.referenceCode}? This initiates the outbound transfer to the beneficiary and can only be done once.`
+          : undefined
+      }
+      confirmLabel="Accept transfer"
+      loading={acting}
+      onClose={() => {
+        if (acting) return;
+        setConfirmAcceptOpen(false);
+      }}
+      onConfirm={acceptTransfer}
+    />
+    </>
   );
 }

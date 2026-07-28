@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronLeft,
@@ -10,10 +17,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { CorporateCustomerSelect } from "./CorporateCustomerSelect";
-import {
-  PipelineStatusBadge,
-  TransferStatusBadge,
-} from "./transfer-ui";
+import { PipelineStatusBadge, TransferStatusBadge } from "./transfer-ui";
 import {
   beneficiaryName,
   fmtDateTime,
@@ -56,15 +60,19 @@ export function OutboundTransferListClient({
   const [corporates, setCorporates] = useState<CorporateCustomerOption[]>([]);
   const [corporateUserId, setCorporateUserId] = useState("");
   const [loading, setLoading] = useState(true);
-  const [loadingCorporates, setLoadingCorporates] = useState(role === "CORPORATE");
+  const [loadingCorporates, setLoadingCorporates] = useState(
+    role === "CORPORATE",
+  );
   const [search, setSearch] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [page, setPage] = useState(1);
-  const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(
-    null,
-  );
+  const [message, setMessage] = useState<{
+    kind: "ok" | "err";
+    text: string;
+  } | null>(null);
+  const skipScrollOnMount = useRef(true);
 
   const loadCorporates = useCallback(async () => {
     if (role !== "CORPORATE") return;
@@ -127,18 +135,12 @@ export function OutboundTransferListClient({
   }, [search, statusFilter, corporateUserId, fromDate, toDate]);
 
   const filtered = useMemo(() => {
-    const tokens = search
-      .toLowerCase()
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
+    const tokens = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
 
     const fromMs = fromDate
       ? new Date(`${fromDate}T00:00:00.000Z`).getTime()
       : null;
-    const toMs = toDate
-      ? new Date(`${toDate}T23:59:59.999Z`).getTime()
-      : null;
+    const toMs = toDate ? new Date(`${toDate}T23:59:59.999Z`).getTime() : null;
 
     return transfers.filter((t) => {
       if (statusFilter !== "ALL" && t.status !== statusFilter) return false;
@@ -185,8 +187,23 @@ export function OutboundTransferListClient({
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   );
-  const rangeStart = filtered.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const rangeStart =
+    filtered.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(currentPage * PAGE_SIZE, filtered.length);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  useEffect(() => {
+    if (skipScrollOnMount.current) {
+      skipScrollOnMount.current = false;
+      return;
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [currentPage]);
 
   function openTransfer(id: string) {
     router.push(`${detailBasePath}/${id}`);
@@ -380,7 +397,9 @@ export function OutboundTransferListClient({
                         {t.referenceCode}
                       </span>
                       <TransferStatusBadge status={t.status} compact />
-                      <span className="hidden sm:inline text-xs text-slate-400">·</span>
+                      <span className="hidden sm:inline text-xs text-slate-400">
+                        ·
+                      </span>
                       <span className="text-xs text-slate-500">
                         {fmtDateTime(t.createdAt)}
                       </span>
@@ -391,7 +410,9 @@ export function OutboundTransferListClient({
                         {t.user.name || t.user.email || "—"}
                       </p>
                       {t.user.email ? (
-                        <p className="text-xs text-slate-500 truncate">{t.user.email}</p>
+                        <p className="text-xs text-slate-500 truncate">
+                          {t.user.email}
+                        </p>
                       ) : null}
                     </div>
 
@@ -419,7 +440,9 @@ export function OutboundTransferListClient({
                       <TransferMeta label="Corridor">
                         <span className="text-xs font-medium">
                           {t.senderCountryIso2 ?? "—"} →{" "}
-                          {t.recipientCountryLabel || t.recipientCountryIso2 || "—"}
+                          {t.recipientCountryLabel ||
+                            t.recipientCountryIso2 ||
+                            "—"}
                         </span>
                       </TransferMeta>
                       <TransferMeta label="Pay in">
@@ -431,10 +454,12 @@ export function OutboundTransferListClient({
                       <TransferMeta label="Delivery">
                         {labelEnum(t.beneficiary?.deliveryChannel ?? null)}
                       </TransferMeta>
-                      <TransferMeta label="STK">
-                        <PipelineStatusBadge value={t.flexStkStatus} />
-                      </TransferMeta>
-                      <TransferMeta label="Payout">
+                      {t.payInMethod === "MOBILE_MONEY" ? (
+                        <TransferMeta label="STK">
+                          <PipelineStatusBadge value={t.flexStkStatus} />
+                        </TransferMeta>
+                      ) : null}
+                      <TransferMeta label="Payin">
                         <PipelineStatusBadge value={t.flexPayoutStatus} />
                       </TransferMeta>
                       <TransferMeta label="Completed">
@@ -464,26 +489,33 @@ export function OutboundTransferListClient({
                 {filtered.length.toLocaleString()}
               </span>{" "}
               transfer{filtered.length === 1 ? "" : "s"}
-              {corporateUserId && role === "CORPORATE" ? " for selected corporate" : ""}
+              {corporateUserId && role === "CORPORATE"
+                ? " for selected corporate"
+                : ""}
             </p>
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                onClick={() => setPage(Math.max(1, currentPage - 1))}
                 disabled={currentPage <= 1}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 h-9 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 h-9 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:pointer-events-none"
+                aria-label="Previous page"
               >
                 <ChevronLeft className="w-4 h-4" />
                 Previous
               </button>
               <span className="text-sm text-slate-500 tabular-nums px-1">
-                {currentPage} / {totalPages}
+                Page {currentPage.toLocaleString()} of{" "}
+                {totalPages.toLocaleString()}
               </span>
               <button
                 type="button"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                onClick={() =>
+                  setPage(Math.min(totalPages, currentPage + 1))
+                }
                 disabled={currentPage >= totalPages}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 h-9 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 h-9 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:pointer-events-none"
+                aria-label="Next page"
               >
                 Next
                 <ChevronRight className="w-4 h-4" />

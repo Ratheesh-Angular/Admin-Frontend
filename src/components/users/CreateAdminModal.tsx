@@ -10,6 +10,7 @@ import {
   fieldControlError,
 } from "@/lib/field-styles";
 import {
+  validateAdminEmailDomain,
   validateAdminIdentifier,
   validateAdminPassword,
   validateConfirmPassword,
@@ -72,12 +73,8 @@ export function CreateAdminModal({
       next.username = usernameErr;
     }
 
-    const emailErr = validateAdminIdentifier(email);
-    if (!email.trim()) {
-      next.email = "Email is required.";
-    } else if (!email.includes("@") || emailErr) {
-      next.email = "Enter a valid email address.";
-    }
+    const emailErr = validateAdminEmailDomain(email);
+    if (emailErr) next.email = emailErr;
 
     const passwordErr = validateAdminPassword(password);
     if (passwordErr) next.password = passwordErr;
@@ -210,7 +207,7 @@ export function CreateAdminModal({
                   setEmail(e.target.value);
                   setErrors((p) => ({ ...p, email: undefined }));
                 }}
-                placeholder="ops@company.com"
+                placeholder="name@instaremit.co"
                 autoComplete="email"
                 disabled={saving}
                 className={`${fieldControlBase} ${errors.email ? fieldControlError : ""}`}

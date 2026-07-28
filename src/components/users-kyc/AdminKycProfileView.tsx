@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ClipboardCheck, Download, ExternalLink, FileText, FolderOpen, User } from "lucide-react";
 import { documentTypeLabel } from "@/lib/kyc/documentLabels";
+import { fmtDateTime } from "@/lib/payments/transfer-format";
 import { KycReviewPanel, type KycHistoryEntry } from "./KycReviewPanel";
 import {
   DetailRow,
@@ -250,7 +251,7 @@ export function AdminKycProfileView({
             />
             <DetailRow
               label="Member since"
-              value={fmtDate(user.createdAt as string | undefined)}
+              value={fmtDateTime(user.createdAt as string | undefined)}
             />
           </dl>
         </SectionCard>
