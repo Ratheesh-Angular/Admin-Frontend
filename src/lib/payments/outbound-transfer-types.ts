@@ -68,6 +68,8 @@ export type OutboundTransferListRow = {
   flexPayoutReference: string | null;
   flexPayoutStatus: string | null;
   paymentConfirmedAt: string | null;
+  /** Admin who verified bank-transfer pay-in; null for mobile money / unconfirmed. */
+  paymentConfirmedByAdminName: string | null;
   payoutInitiatedAt: string | null;
   completedAt: string | null;
   failureReason: string | null;
