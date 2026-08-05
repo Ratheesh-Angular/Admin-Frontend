@@ -5,15 +5,20 @@ import Link from "next/link";
 import {
   ArrowLeft,
   ArrowRightLeft,
+  Bell,
   Building2,
   CheckCircle2,
   ExternalLink,
   FileText,
   User,
   Wallet,
+  X,
 } from "lucide-react";
 import { DetailRow, SectionCard, TransferStatusBadge } from "./transfer-ui";
-import { AppDialog } from "@/components/ui/AppDialog";
+import {
+  TransferReviewActionModal,
+  type TransferReviewAction,
+} from "./TransferReviewActionModal";
 import {
   beneficiaryName,
   fmtDate,
@@ -84,8 +89,9 @@ export function OutboundTransferDetailClient({
   const [transfer, setTransfer] = useState<OutboundTransferDetail | null>(null);
   const [tab, setTab] = useState<TabId>("overview");
   const [loading, setLoading] = useState(true);
-  const [acting, setActing] = useState(false);
-  const [confirmAcceptOpen, setConfirmAcceptOpen] = useState(false);
+  const [acting, setActing] = useState<TransferReviewAction | null>(null);
+  const [pendingAction, setPendingAction] =
+    useState<TransferReviewAction | null>(null);
   const [payoutDebug, setPayoutDebug] = useState<PayoutDebug | null>(null);
   const [message, setMessage] = useState<{
     kind: "ok" | "err";
@@ -122,12 +128,20 @@ export function OutboundTransferDetailClient({
     void load();
   }, [load]);
 
-  const canAccept =
+  const canReview =
     transfer &&
     transfer.payInMethod === "BANK_TRANSFER" &&
     ACCEPTABLE_ACCEPT_STATUSES.has(transfer.status) &&
     !transfer.payoutInitiatedAt &&
     Boolean(transfer.beneficiary);
+
+  const canAccept = canReview;
+  const canReject = canReview;
+
+  const recipientName =
+    transfer?.user.name?.trim() ||
+    transfer?.user.email?.trim() ||
+    "Customer";
 
   const payoutAlreadyInitiated =
     transfer &&
@@ -139,17 +153,22 @@ export function OutboundTransferDetailClient({
       transfer.status === "COMPLETED" ||
       transfer.status === "FAILED");
 
-  async function acceptTransfer() {
+  async function acceptTransfer(emailMessage: string) {
     if (!transfer || !canAccept) return;
 
-    setActing(true);
+    setActing("ACCEPTED");
     setMessage(null);
     setPayoutDebug(null);
 
     try {
       const res = await fetch(
         `/api/admin/transfers/${encodeURIComponent(transferId)}/trigger-payout`,
-        { method: "POST", credentials: "same-origin" },
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: emailMessage }),
+        },
       );
       const data = (await res.json()) as Record<string, unknown>;
       const debug = extractPayoutDebug(data);
@@ -160,7 +179,7 @@ export function OutboundTransferDetailClient({
           kind: "ok",
           text: `Transfer accepted for ${transfer.referenceCode}. Payout has been initiated.`,
         });
-        setConfirmAcceptOpen(false);
+        setPendingAction(null);
         await load();
       } else {
         setMessage({
@@ -173,7 +192,96 @@ export function OutboundTransferDetailClient({
     } catch {
       setMessage({ kind: "err", text: "Network error." });
     } finally {
-      setActing(false);
+      setActing(null);
+    }
+  }
+
+  async function rejectTransfer(emailMessage: string) {
+    if (!transfer || !canReject) return;
+
+    setActing("REJECTED");
+    setMessage(null);
+
+    try {
+      const res = await fetch(
+        `/api/admin/transfers/${encodeURIComponent(transferId)}/reject-payment`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: emailMessage }),
+        },
+      );
+      const data = (await res.json()) as Record<string, unknown>;
+
+      if (res.ok && data.success) {
+        setMessage({
+          kind: "ok",
+          text: `Transfer ${transfer.referenceCode} has been rejected.`,
+        });
+        setPendingAction(null);
+        await load();
+      } else {
+        setMessage({
+          kind: "err",
+          text: String(
+            data.error || data.message || "Could not reject transfer.",
+          ),
+        });
+      }
+    } catch {
+      setMessage({ kind: "err", text: "Network error." });
+    } finally {
+      setActing(null);
+    }
+  }
+
+  async function remindPayment(emailMessage: string) {
+    if (!transfer || !canReview) return;
+
+    setActing("REMIND");
+    setMessage(null);
+
+    try {
+      const res = await fetch(
+        `/api/admin/transfers/${encodeURIComponent(transferId)}/remind-payment`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: emailMessage }),
+        },
+      );
+      const data = (await res.json()) as Record<string, unknown>;
+
+      if (res.ok && data.success) {
+        setMessage({
+          kind: "ok",
+          text: `Payment reminder sent for ${transfer.referenceCode}.`,
+        });
+        setPendingAction(null);
+      } else {
+        setMessage({
+          kind: "err",
+          text: String(
+            data.error || data.message || "Could not send payment reminder.",
+          ),
+        });
+      }
+    } catch {
+      setMessage({ kind: "err", text: "Network error." });
+    } finally {
+      setActing(null);
+    }
+  }
+
+  function handleModalConfirm(emailMessage: string) {
+    if (pendingAction === "ACCEPTED") {
+      void acceptTransfer(emailMessage);
+    } else if (pendingAction === "REJECTED") {
+      void rejectTransfer(emailMessage);
+    } else if (pendingAction === "REMIND") {
+      void remindPayment(emailMessage);
     }
   }
 
@@ -684,12 +792,30 @@ export function OutboundTransferDetailClient({
                   <div className="flex flex-wrap gap-3">
                     <button
                       type="button"
-                      disabled={acting || !canAccept}
-                      onClick={() => setConfirmAcceptOpen(true)}
+                      disabled={acting !== null || !canReject}
+                      onClick={() => setPendingAction("REJECTED")}
+                      className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-5 h-11 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <X className="w-4 h-4" />
+                      {acting === "REJECTED" ? "Rejecting…" : "Reject transfer"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={acting !== null || !canReview}
+                      onClick={() => setPendingAction("REMIND")}
+                      className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-5 h-11 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Bell className="w-4 h-4" />
+                      {acting === "REMIND" ? "Sending…" : "Remind Payment"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={acting !== null || !canAccept}
+                      onClick={() => setPendingAction("ACCEPTED")}
                       className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-5 h-11 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <CheckCircle2 className="w-4 h-4" />
-                      {acting ? "Processing…" : "Accept transfer"}
+                      {acting === "ACCEPTED" ? "Accepting…" : "Accept transfer"}
                     </button>
                   </div>
 
@@ -720,23 +846,20 @@ export function OutboundTransferDetailClient({
         )}
       </div>
 
-      <AppDialog
-        open={confirmAcceptOpen}
-        variant="confirm"
-        title="Accept transfer?"
-        message={
-          transfer
-            ? `Release payout for ${transfer.referenceCode}? This initiates the outbound transfer to the beneficiary and can only be done once.`
-            : undefined
-        }
-        confirmLabel="Accept transfer"
-        loading={acting}
-        onClose={() => {
-          if (acting) return;
-          setConfirmAcceptOpen(false);
-        }}
-        onConfirm={acceptTransfer}
-      />
+      {transfer && pendingAction ? (
+        <TransferReviewActionModal
+          open
+          action={pendingAction}
+          recipientName={recipientName}
+          referenceCode={transfer.referenceCode}
+          loading={acting !== null}
+          onClose={() => {
+            if (acting !== null) return;
+            setPendingAction(null);
+          }}
+          onConfirm={handleModalConfirm}
+        />
+      ) : null}
     </>
   );
 }

@@ -6,7 +6,7 @@ export async function POST(request: Request, { params }: Params) {
   const { id } = await params;
   const body = await request.text();
   return proxyAdminSessionApi(
-    `/api/admin/transfers/${encodeURIComponent(id)}/trigger-payout`,
+    `/api/admin/transfers/${encodeURIComponent(id)}/remind-payment`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

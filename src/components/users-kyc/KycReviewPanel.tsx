@@ -31,6 +31,8 @@ function reviewGuidance(status: string): string {
   switch (status) {
     case "SUBMITTED":
       return "This application was submitted by the customer. Review the other tabs, then approve or reject.";
+    case "IN_PROGRESS":
+      return "The customer is completing Signzy identity verification. You can still approve or reject for exceptions.";
     case "PENDING":
       return "The customer has not submitted their application yet. You can still approve or reject after reviewing their profile and documents in the other tabs.";
     case "APPROVED":

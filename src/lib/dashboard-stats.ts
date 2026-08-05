@@ -1,47 +1,28 @@
-type UserCounts = {
-  newToday: number;
-  approved: number;
-  pending: number;
-  rejected: number;
-};
+import type {
+  DashboardStatsPayload,
+  EnrichedDashboardStats,
+  TransactionCounts,
+  UserCounts,
+} from "./corridor-dashboard-types";
+import {
+  buildCorridorStatsFromTransfers,
+  type CorridorTransferRow,
+} from "./corridor-dashboard-aggregate";
+import type { OutboundTransferListRow } from "./payments/outbound-transfer-types";
 
-type TransactionCounts = {
-  total: number;
-  pending: number;
-  processing: number;
-  completed: number;
-  failed: number;
-};
-
-export type DashboardStatsPayload = {
-  totalTransfers: number;
-  transactionCounts?: TransactionCounts;
-  userCounts?: UserCounts;
-  statsDate?: string;
-  totalUsers: number;
-  personalUsers: number;
-  corporateUsers: number;
-  totalTransferValue: number;
-  payCurrency: string | null;
-  avgKycAuthMinutes: number | null;
-  avgKycAuthHours: number | null;
-  avgKycAuthDays: number | null;
-  kycAuthSampleSize: number;
-};
-
-export type EnrichedDashboardStats = DashboardStatsPayload & {
-  transactionCounts: TransactionCounts;
-  userCounts: UserCounts;
-};
+export type {
+  DashboardStatsPayload,
+  EnrichedDashboardStats,
+  TransactionCounts,
+  UserCounts,
+} from "./corridor-dashboard-types";
 
 type KycUserRow = {
   kycStatus: string;
   createdAt: string;
 };
 
-type TransferRow = {
-  status: string;
-};
+type TransferRow = CorridorTransferRow & Pick<OutboundTransferListRow, "status">;
 
 function startOfUtcDay(iso?: string): Date {
   if (iso) {
@@ -67,7 +48,7 @@ function buildUserCountsFromRows(
     const created = new Date(u.createdAt);
     if (!Number.isNaN(created.getTime()) && created >= dayStart) newToday += 1;
     if (u.kycStatus === "APPROVED") approved += 1;
-    else if (u.kycStatus === "PENDING" || u.kycStatus === "SUBMITTED") pending += 1;
+    else if (u.kycStatus === "PENDING" || u.kycStatus === "SUBMITTED" || u.kycStatus === "IN_PROGRESS") pending += 1;
     else if (u.kycStatus === "REJECTED") rejected += 1;
   }
 
@@ -143,7 +124,15 @@ async function fetchTransfersForRole(role: "INDIVIDUAL" | "CORPORATE") {
   return (data?.data?.transfers as TransferRow[]) ?? [];
 }
 
-/** Fill missing dashboard buckets when the stats API returns legacy/partial payloads. */
+async function fetchAllTransfers(): Promise<TransferRow[]> {
+  const [individual, corporate] = await Promise.all([
+    fetchTransfersForRole("INDIVIDUAL"),
+    fetchTransfersForRole("CORPORATE"),
+  ]);
+  return [...individual, ...corporate];
+}
+
+/** Fill missing dashboard buckets and rebuild corridor stats from outbound transfer lists. */
 export async function enrichDashboardStats(
   stats: DashboardStatsPayload,
 ): Promise<EnrichedDashboardStats> {
@@ -153,30 +142,14 @@ export async function enrichDashboardStats(
     stats.totalTransfers,
   );
 
-  if (!needsUsers && !needsTx) {
-    return {
-      ...stats,
-      userCounts: stats.userCounts ?? {
-        newToday: 0,
-        approved: 0,
-        pending: 0,
-        rejected: 0,
-      },
-      transactionCounts: stats.transactionCounts ?? {
-        total: stats.totalTransfers,
-        pending: 0,
-        processing: 0,
-        completed: 0,
-        failed: 0,
-      },
-    };
-  }
+  const transfers = await fetchAllTransfers();
+  const corridorFields = buildCorridorStatsFromTransfers(transfers);
 
-  const dayStart = startOfUtcDay(stats.statsDate);
   let userCounts = stats.userCounts;
   let transactionCounts = stats.transactionCounts;
 
   if (needsUsers) {
+    const dayStart = startOfUtcDay(stats.statsDate);
     const [individual, corporate] = await Promise.all([
       fetchUsersForRole("INDIVIDUAL"),
       fetchUsersForRole("CORPORATE"),
@@ -185,18 +158,12 @@ export async function enrichDashboardStats(
   }
 
   if (needsTx) {
-    const [individual, corporate] = await Promise.all([
-      fetchTransfersForRole("INDIVIDUAL"),
-      fetchTransfersForRole("CORPORATE"),
-    ]);
-    transactionCounts = buildTransactionCountsFromRows([
-      ...individual,
-      ...corporate,
-    ]);
+    transactionCounts = buildTransactionCountsFromRows(transfers);
   }
 
-  return {
+  return normalizeEnrichedStats({
     ...stats,
+    ...corridorFields,
     userCounts: userCounts ?? {
       newToday: 0,
       approved: 0,
@@ -210,6 +177,46 @@ export async function enrichDashboardStats(
       completed: 0,
       failed: 0,
     },
-    totalTransfers: transactionCounts?.total ?? stats.totalTransfers,
+    totalTransfers: transactionCounts?.total ?? transfers.filter((t) => t.status !== "DRAFT").length,
+    payCurrency: corridorFields.volumeByCurrency[0]?.currency ?? stats.payCurrency,
+    volumeByCurrency: corridorFields.volumeByCurrency,
+  });
+}
+
+function normalizeEnrichedStats(
+  stats: DashboardStatsPayload & {
+    userCounts: UserCounts;
+    transactionCounts: TransactionCounts;
+  },
+): EnrichedDashboardStats {
+  return {
+    ...stats,
+    fxTicker: stats.fxTicker ?? [],
+    payInByCurrency: stats.payInByCurrency ?? [],
+    corridorMatrix: stats.corridorMatrix ?? {
+      payCurrencies: [],
+      receiveCurrencies: [],
+      cells: [],
+      rowTotals: {},
+      colTotals: {},
+    },
+    payoutTopCurrencies: stats.payoutTopCurrencies ?? [],
+    volumeByCurrency: stats.volumeByCurrency ?? [],
   };
+}
+
+export type KycMetricsPayload = {
+  avgKycAuthMinutes: number | null;
+  avgKycAuthHours: number | null;
+  avgKycAuthDays: number | null;
+  kycAuthSampleSize: number;
+};
+
+export async function fetchKycMetrics(): Promise<KycMetricsPayload | null> {
+  const res = await fetch("/api/admin/dashboard/kyc-metrics", {
+    credentials: "same-origin",
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return (data?.data?.metrics as KycMetricsPayload) ?? null;
 }

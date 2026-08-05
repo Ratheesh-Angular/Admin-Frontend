@@ -14,6 +14,7 @@ import {
   ChevronRight,
   ChevronRight as RowChevron,
   Eye,
+  FileSpreadsheet,
   RefreshCw,
 } from "lucide-react";
 import { CorporateCustomerSelect } from "./CorporateCustomerSelect";
@@ -23,7 +24,9 @@ import {
   fmtDateTime,
   fmtMoney,
   labelEnum,
+  resolveTransferReceiveCurrency,
 } from "@/lib/payments/transfer-format";
+import { exportOutboundTransfersExcel } from "@/lib/payments/export-outbound-transfers-excel";
 import type {
   CorporateCustomerOption,
   OutboundTransferListRow,
@@ -67,6 +70,7 @@ export function OutboundTransferListClient({
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [exporting, setExporting] = useState(false);
   const [page, setPage] = useState(1);
   const [message, setMessage] = useState<{
     kind: "ok" | "err";
@@ -173,13 +177,17 @@ export function OutboundTransferListClient({
     });
   }, [transfers, search, statusFilter, fromDate, toDate]);
 
-  const statusCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const t of transfers) {
-      counts.set(t.status, (counts.get(t.status) ?? 0) + 1);
-    }
-    return counts;
-  }, [transfers]);
+  const selectedCorporateName = useMemo(() => {
+    if (!corporateUserId) return undefined;
+    const match = corporates.find((c) => c.id === corporateUserId);
+    return match?.name || match?.email || undefined;
+  }, [corporateUserId, corporates]);
+
+  const statusFilterLabel =
+    STATUS_FILTERS.find((f) => f.id === statusFilter)?.label ?? statusFilter;
+
+  const hasDateOrStatusFilters =
+    Boolean(fromDate) || Boolean(toDate) || statusFilter !== "ALL";
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -207,6 +215,36 @@ export function OutboundTransferListClient({
 
   function openTransfer(id: string) {
     router.push(`${detailBasePath}/${id}`);
+  }
+
+  function clearDateAndStatusFilters() {
+    setFromDate("");
+    setToDate("");
+    setStatusFilter("ALL");
+  }
+
+  async function handleExportExcel() {
+    if (filtered.length === 0 || exporting) return;
+    setExporting(true);
+    setMessage(null);
+    try {
+      await exportOutboundTransfersExcel({
+        rows: filtered,
+        role,
+        filters: {
+          fromDate: fromDate || undefined,
+          toDate: toDate || undefined,
+          status: statusFilter,
+          statusLabel: statusFilterLabel,
+          search: search.trim() || undefined,
+          corporateCustomerName: selectedCorporateName,
+        },
+      });
+    } catch {
+      setMessage({ kind: "err", text: "Failed to generate Excel report." });
+    } finally {
+      setExporting(false);
+    }
   }
 
   function TransferMeta({
@@ -239,15 +277,28 @@ export function OutboundTransferListClient({
             Click any row to open full transfer details.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void loadTransfers()}
-          disabled={loading}
-          className="inline-flex items-center gap-2 self-start rounded-lg border border-slate-200 bg-white px-3 h-10 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
+        <div className="flex flex-wrap items-center gap-2 self-start">
+          <button
+            type="button"
+            onClick={() => void handleExportExcel()}
+            disabled={loading || exporting || filtered.length === 0}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 h-10 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <FileSpreadsheet
+              className={`w-4 h-4 ${exporting ? "animate-pulse" : ""}`}
+            />
+            {exporting ? "Exporting…" : "Export Excel"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void loadTransfers()}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 h-10 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {message ? (
@@ -259,36 +310,6 @@ export function OutboundTransferListClient({
           }`}
         >
           {message.text}
-        </div>
-      ) : null}
-
-      {!loading && transfers.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {STATUS_FILTERS.map((f) => {
-            const count =
-              f.id === "ALL" ? transfers.length : (statusCounts.get(f.id) ?? 0);
-            if (f.id !== "ALL" && count === 0) return null;
-            const active = statusFilter === f.id;
-            return (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => setStatusFilter(f.id)}
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                  active
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
-                }`}
-              >
-                {f.label}
-                <span
-                  className={`tabular-nums ${active ? "text-indigo-100" : "text-slate-400"}`}
-                >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
         </div>
       ) : null}
 
@@ -342,16 +363,33 @@ export function OutboundTransferListClient({
                 className="rounded-lg border border-slate-200 px-3 h-10 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 bg-white"
               />
             </div>
-            {fromDate || toDate ? (
+            <div>
+              <label
+                htmlFor="transfer-status-filter"
+                className="block text-xs font-medium text-slate-500 mb-1"
+              >
+                Status
+              </label>
+              <select
+                id="transfer-status-filter"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="rounded-lg border border-slate-200 px-3 h-10 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 bg-white min-w-[11rem]"
+              >
+                {STATUS_FILTERS.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {hasDateOrStatusFilters ? (
               <button
                 type="button"
-                onClick={() => {
-                  setFromDate("");
-                  setToDate("");
-                }}
+                onClick={clearDateAndStatusFilters}
                 className="h-10 px-3 text-sm font-medium text-slate-600 hover:text-indigo-700"
               >
-                Clear dates
+                Clear filters
               </button>
             ) : null}
           </div>
@@ -424,7 +462,10 @@ export function OutboundTransferListClient({
                       </TransferMeta>
                       <TransferMeta label="Recipient gets">
                         <span className="tabular-nums">
-                          {fmtMoney(t.receiveAmount, t.receiveCurrency)}
+                          {fmtMoney(
+                            t.receiveAmount,
+                            resolveTransferReceiveCurrency(t),
+                          )}
                         </span>
                       </TransferMeta>
                       <TransferMeta label="Fee">

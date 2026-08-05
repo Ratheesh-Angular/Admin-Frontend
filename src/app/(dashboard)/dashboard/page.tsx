@@ -1,5 +1,5 @@
-import AdminDashboardClient from "@/components/dashboard/AdminDashboardClient";
+import CorridorDashboardClient from "@/components/dashboard/corridor/CorridorDashboardClient";
 
 export default function DashboardPage() {
-  return <AdminDashboardClient />;
+  return <CorridorDashboardClient />;
 }

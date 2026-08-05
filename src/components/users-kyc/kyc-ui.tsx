@@ -89,6 +89,7 @@ export function normalizeSubmittedProfileArray(value: unknown): unknown[] {
 export function KycBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     PENDING: "bg-amber-50 text-amber-800 ring-amber-200",
+    IN_PROGRESS: "bg-sky-50 text-sky-800 ring-sky-200",
     SUBMITTED: "bg-blue-50 text-blue-800 ring-blue-200",
     APPROVED: "bg-emerald-50 text-emerald-800 ring-emerald-200",
     REJECTED: "bg-red-50 text-red-800 ring-red-200",
@@ -96,6 +97,7 @@ export function KycBadge({ status }: { status: string }) {
   };
   const labels: Record<string, string> = {
     PENDING: "Pending",
+    IN_PROGRESS: "Verification in progress",
     SUBMITTED: "Under review",
     APPROVED: "Approved",
     REJECTED: "Rejected",

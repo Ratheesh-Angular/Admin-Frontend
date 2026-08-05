@@ -30,3 +30,20 @@ body {
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
 }
+
+.corridor-dashboard .font-display {
+  font-family: var(--font-display), sans-serif;
+}
+
+.corridor-dashboard .font-mono {
+  font-family: var(--font-mono-dashboard), monospace;
+}
+
+@keyframes ticker {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}

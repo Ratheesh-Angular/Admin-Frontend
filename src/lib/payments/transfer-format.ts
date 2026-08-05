@@ -51,3 +51,71 @@ export function beneficiaryName(
   const name = [beneficiary.firstName, beneficiary.lastName].filter(Boolean).join(" ");
   return name || "—";
 }
+
+type ReceiveCurrencyRow = {
+  receiveCurrency?: string | null;
+  beneficiary?: { payoutCurrency?: string | null } | null;
+};
+
+export function resolveTransferReceiveCurrency(
+  row: ReceiveCurrencyRow,
+): string | null {
+  const direct = row.receiveCurrency?.trim().toUpperCase();
+  if (direct) return direct;
+  const fallback = row.beneficiary?.payoutCurrency?.trim().toUpperCase();
+  return fallback || null;
+}
+
+type PayoutBeneficiary = {
+  deliveryChannel?: string;
+  accountNumber?: string | null;
+  iban?: string | null;
+  mobileNumber?: string | null;
+  payoutInPersonIdNumber?: string | null;
+};
+
+export function payoutDestination(
+  beneficiary: PayoutBeneficiary | null | undefined,
+): string {
+  if (!beneficiary) return "—";
+  const channel = beneficiary.deliveryChannel?.toUpperCase();
+  if (channel === "MOBILE_MONEY") {
+    return beneficiary.mobileNumber?.trim() || "—";
+  }
+  if (channel === "BANK_TRANSFER" || channel === "UPI") {
+    return (
+      beneficiary.accountNumber?.trim() ||
+      beneficiary.iban?.trim() ||
+      "—"
+    );
+  }
+  if (channel === "PAYOUT_IN_PERSON") {
+    return beneficiary.payoutInPersonIdNumber?.trim() || "—";
+  }
+  return (
+    beneficiary.accountNumber?.trim() ||
+    beneficiary.mobileNumber?.trim() ||
+    beneficiary.iban?.trim() ||
+    "—"
+  );
+}
+
+export function payoutBankOrProvider(
+  beneficiary: {
+    deliveryChannel?: string;
+    bankName?: string | null;
+    flexBankName?: string | null;
+    mobileMoneyProvider?: string | null;
+  } | null | undefined,
+): string {
+  if (!beneficiary) return "—";
+  const channel = beneficiary.deliveryChannel?.toUpperCase();
+  if (channel === "MOBILE_MONEY") {
+    return beneficiary.mobileMoneyProvider?.trim() || "—";
+  }
+  return (
+    beneficiary.bankName?.trim() ||
+    beneficiary.flexBankName?.trim() ||
+    "—"
+  );
+}

@@ -15,6 +15,15 @@ export type OutboundTransferBeneficiarySummary = {
   firstName: string;
   lastName: string;
   country: string | null;
+  bankName?: string | null;
+  flexBankName?: string | null;
+  accountNumber?: string | null;
+  iban?: string | null;
+  swiftBic?: string | null;
+  mobileMoneyProvider?: string | null;
+  mobileNumber?: string | null;
+  payoutInPersonIdNumber?: string | null;
+  payoutCurrency?: string | null;
 };
 
 export type OutboundTransferBeneficiary = OutboundTransferBeneficiarySummary & {
