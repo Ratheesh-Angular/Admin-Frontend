@@ -14,6 +14,16 @@ import type { CurrencyPairOption } from "@/components/country/CurrencyPairSelect
 
 type TariffPanelProps = {
   audience: "INDIVIDUAL" | "CORPORATE";
+  countryCode: string;
+  countryReady: boolean;
+};
+
+type TariffSchedule = {
+  currencyPairId: string;
+  currencyPair: CurrencyPairOption;
+  slabs: TariffRow[];
+  overallMin: string;
+  overallMax: string;
 };
 
 function formatAmount(value: string): string {
@@ -22,7 +32,59 @@ function formatAmount(value: string): string {
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-export function TariffPanel({ audience }: TariffPanelProps) {
+function groupTariffs(tariffs: TariffRow[]): TariffSchedule[] {
+  const byPair = new Map<string, TariffRow[]>();
+  for (const row of tariffs) {
+    const list = byPair.get(row.currencyPairId) ?? [];
+    list.push(row);
+    byPair.set(row.currencyPairId, list);
+  }
+
+  const schedules: TariffSchedule[] = [];
+  for (const [currencyPairId, slabs] of byPair) {
+    const sorted = [...slabs].sort(
+      (a, b) => Number(a.minimum) - Number(b.minimum),
+    );
+    let min = Infinity;
+    let max = -Infinity;
+    for (const s of sorted) {
+      const lo = Number(s.minimum);
+      const hi = Number(s.maximum);
+      if (lo < min) min = lo;
+      if (hi > max) max = hi;
+    }
+    schedules.push({
+      currencyPairId,
+      currencyPair: sorted[0].currencyPair,
+      slabs: sorted,
+      overallMin: Number.isFinite(min) ? String(min) : "",
+      overallMax: Number.isFinite(max) ? String(max) : "",
+    });
+  }
+
+  schedules.sort((a, b) => {
+    const aLabel = `${a.currencyPair.baseCurrency}-${a.currencyPair.quoteCurrency}`;
+    const bLabel = `${b.currencyPair.baseCurrency}-${b.currencyPair.quoteCurrency}`;
+    return aLabel.localeCompare(bLabel);
+  });
+
+  return schedules;
+}
+
+function formatSlabPreview(slabs: TariffRow[]): string {
+  return slabs
+    .map((s) => {
+      const fee = formatTariffValue(s.type, s.value);
+      return `${formatAmount(s.minimum)}–${formatAmount(s.maximum)} (${formatType(s.type)} ${fee})`;
+    })
+    .join("; ");
+}
+
+export function TariffPanel({
+  audience,
+  countryCode,
+  countryReady,
+}: TariffPanelProps) {
   const [tariffs, setTariffs] = useState<TariffRow[]>([]);
   const [pairOptions, setPairOptions] = useState<CurrencyPairOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,17 +96,28 @@ export function TariffPanel({ audience }: TariffPanelProps) {
   } | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
-  const [editing, setEditing] = useState<TariffRow | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingSlabs, setEditingSlabs] = useState<TariffRow[]>([]);
+  const [deletingPairId, setDeletingPairId] = useState<string | null>(null);
+
+  const schedules = useMemo(() => groupTariffs(tariffs), [tariffs]);
 
   const loadTariffs = useCallback(async () => {
+    if (!countryReady || !countryCode) {
+      setTariffs([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setMessage(null);
     try {
-      const res = await fetch(
-        `/api/admin/tariffs?audience=${encodeURIComponent(audience)}`,
-        { credentials: "same-origin" },
-      );
+      const qs = new URLSearchParams({
+        audience,
+        countryCode,
+      });
+      const res = await fetch(`/api/admin/tariffs?${qs.toString()}`, {
+        credentials: "same-origin",
+      });
       const data = await res.json();
       if (!res.ok) {
         setMessage({
@@ -61,7 +134,7 @@ export function TariffPanel({ audience }: TariffPanelProps) {
     } finally {
       setLoading(false);
     }
-  }, [audience]);
+  }, [audience, countryCode, countryReady]);
 
   const loadPairs = useCallback(async () => {
     setPairsLoading(true);
@@ -84,19 +157,34 @@ export function TariffPanel({ audience }: TariffPanelProps) {
 
   useEffect(() => {
     void loadTariffs();
+  }, [loadTariffs]);
+
+  useEffect(() => {
     void loadPairs();
-  }, [loadTariffs, loadPairs]);
+  }, [loadPairs]);
 
   const handleDelete = useCallback(
-    async (row: TariffRow) => {
-      const pair = row.currencyPair;
+    async (schedule: TariffSchedule) => {
+      const pair = schedule.currencyPair;
       const label = `${pair.baseCurrency} - ${pair.quoteCurrency}`;
-      if (!window.confirm(`Delete tariff for ${label}?`)) return;
+      const count = schedule.slabs.length;
+      if (
+        !window.confirm(
+          `Delete the full tariff schedule for ${label} (${count} slab${count === 1 ? "" : "s"})?`,
+        )
+      ) {
+        return;
+      }
 
-      setDeletingId(row.id);
+      setDeletingPairId(schedule.currencyPairId);
       setMessage(null);
       try {
-        const res = await fetch(`/api/admin/tariffs/${row.id}`, {
+        const qs = new URLSearchParams({
+          audience,
+          countryCode,
+          currencyPairId: schedule.currencyPairId,
+        });
+        const res = await fetch(`/api/admin/tariffs/schedule?${qs.toString()}`, {
           method: "DELETE",
           credentials: "same-origin",
         });
@@ -104,19 +192,19 @@ export function TariffPanel({ audience }: TariffPanelProps) {
         if (!res.ok) {
           setMessage({
             kind: "err",
-            text: data?.error || "Could not delete tariff.",
+            text: data?.error || "Could not delete tariff schedule.",
           });
           return;
         }
-        setMessage({ kind: "ok", text: "Tariff deleted." });
+        setMessage({ kind: "ok", text: "Tariff schedule deleted." });
         await loadTariffs();
       } catch {
         setMessage({ kind: "err", text: "Network error." });
       } finally {
-        setDeletingId(null);
+        setDeletingPairId(null);
       }
     },
-    [loadTariffs],
+    [audience, countryCode, loadTariffs],
   );
 
   const columns = useMemo(
@@ -124,11 +212,11 @@ export function TariffPanel({ audience }: TariffPanelProps) {
       {
         id: "pair",
         header: "Currency pair",
-        searchText: (row: TariffRow) => {
+        searchText: (row: TariffSchedule) => {
           const p = row.currencyPair;
           return `${p.baseCurrency} - ${p.quoteCurrency} ${p.baseCountryCode} ${p.quoteCountryCode}`;
         },
-        cell: (row: TariffRow) => (
+        cell: (row: TariffSchedule) => (
           <CurrencyPairStack
             baseCountryCode={row.currencyPair.baseCountryCode}
             quoteCountryCode={row.currencyPair.quoteCountryCode}
@@ -138,54 +226,56 @@ export function TariffPanel({ audience }: TariffPanelProps) {
         ),
       },
       {
-        id: "minimum",
-        header: "Minimum",
-        searchText: (row: TariffRow) => row.minimum,
-        cell: (row: TariffRow) => formatAmount(row.minimum),
+        id: "slabs",
+        header: "Slabs",
+        searchText: (row: TariffSchedule) => formatSlabPreview(row.slabs),
+        cell: (row: TariffSchedule) => (
+          <div className="space-y-1 max-w-md">
+            <p className="text-sm font-medium text-slate-900">
+              {row.slabs.length} range{row.slabs.length === 1 ? "" : "s"}
+            </p>
+            <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
+              {formatSlabPreview(row.slabs)}
+            </p>
+          </div>
+        ),
       },
       {
-        id: "maximum",
-        header: "Maximum",
-        searchText: (row: TariffRow) => row.maximum,
-        cell: (row: TariffRow) => formatAmount(row.maximum),
-      },
-      {
-        id: "type",
-        header: "Type",
-        searchText: (row: TariffRow) => formatType(row.type),
-        cell: (row: TariffRow) => formatType(row.type),
-      },
-      {
-        id: "value",
-        header: "Value (fees)",
-        searchText: (row: TariffRow) => row.value,
-        cell: (row: TariffRow) => formatTariffValue(row.type, row.value),
+        id: "range",
+        header: "Overall range",
+        searchText: (row: TariffSchedule) =>
+          `${row.overallMin} ${row.overallMax}`,
+        cell: (row: TariffSchedule) => (
+          <span className="text-sm text-slate-800 whitespace-nowrap">
+            {formatAmount(row.overallMin)} – {formatAmount(row.overallMax)}
+          </span>
+        ),
       },
       {
         id: "actions",
         header: "Actions",
         headerClassName: "text-right w-28",
         cellClassName: "text-right",
-        cell: (row: TariffRow) => (
+        cell: (row: TariffSchedule) => (
           <div className="flex items-center justify-end gap-1">
             <button
               type="button"
               onClick={() => {
                 setModalMode("edit");
-                setEditing(row);
+                setEditingSlabs(row.slabs);
                 setModalOpen(true);
               }}
               className="p-2 rounded-lg text-slate-500 hover:text-indigo-700 hover:bg-indigo-50"
-              aria-label="Edit tariff"
+              aria-label="Edit tariff schedule"
             >
               <Pencil className="w-4 h-4" />
             </button>
             <button
               type="button"
               onClick={() => void handleDelete(row)}
-              disabled={deletingId === row.id}
+              disabled={deletingPairId === row.currencyPairId}
               className="p-2 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 disabled:opacity-50"
-              aria-label="Delete tariff"
+              aria-label="Delete tariff schedule"
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -193,8 +283,10 @@ export function TariffPanel({ audience }: TariffPanelProps) {
         ),
       },
     ],
-    [deletingId, handleDelete],
+    [deletingPairId, handleDelete],
   );
+
+  const canAdd = countryReady && Boolean(countryCode);
 
   return (
     <div className="space-y-4">
@@ -212,23 +304,28 @@ export function TariffPanel({ audience }: TariffPanelProps) {
 
       <AdminDataTable
         columns={columns}
-        data={tariffs}
-        getRowKey={(row) => row.id}
+        data={schedules}
+        getRowKey={(row) => row.currencyPairId}
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search tariffs…"
-        loading={loading}
-        emptyMessage="No tariffs yet. Add your first tariff."
+        loading={loading || !countryReady}
+        emptyMessage={
+          countryReady
+            ? "No tariffs yet. Add your first tariff."
+            : "Select a country to manage tariffs."
+        }
         filteredEmptyMessage="No tariffs match your search."
         toolbar={
           <button
             type="button"
+            disabled={!canAdd}
             onClick={() => {
               setModalMode("create");
-              setEditing(null);
+              setEditingSlabs([]);
               setModalOpen(true);
             }}
-            className="cursor-pointer inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-4 h-10 text-sm font-medium transition-colors"
+            className="cursor-pointer inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-4 h-10 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="w-4 h-4" />
             Add tariff
@@ -240,14 +337,18 @@ export function TariffPanel({ audience }: TariffPanelProps) {
         open={modalOpen}
         mode={modalMode}
         audience={audience}
-        initial={editing}
+        countryCode={countryCode}
+        initialSlabs={editingSlabs}
         pairOptions={pairOptions}
         pairsLoading={pairsLoading}
         onClose={() => setModalOpen(false)}
         onSaved={async () => {
           setMessage({
             kind: "ok",
-            text: modalMode === "edit" ? "Tariff updated." : "Tariff added.",
+            text:
+              modalMode === "edit"
+                ? "Tariff schedule updated."
+                : "Tariff schedule added.",
           });
           await loadTariffs();
         }}

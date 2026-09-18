@@ -1,14 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useAdminSession } from "@/hooks/useAdminSession";
 import {
   CountryCheckboxList,
   type CountryRow,
 } from "./CountryCheckboxList";
 
 type TabId = "registration" | "platform";
-
-const HIDDEN_TABS = new Set<TabId>(["registration"]);
 
 function parseFlexRows(res: { data?: unknown }): CountryRow[] {
   const flexBody = res?.data;
@@ -38,6 +37,9 @@ function parseCatalogSelection(res: { data?: unknown }): Set<string> {
 }
 
 export function ManageCountryTabs() {
+  const { session } = useAdminSession();
+  const canEditOperationCountries = session?.role === "SUPER_ADMIN";
+
   const [tab, setTab] = useState<TabId>("platform");
   const [rows, setRows] = useState<CountryRow[]>([]);
   const [registrationSelected, setRegistrationSelected] = useState<Set<string>>(
@@ -100,6 +102,7 @@ export function ManageCountryTabs() {
   }, [load]);
 
   async function saveRegistration() {
+    if (!canEditOperationCountries) return;
     setSaving(true);
     setMessage(null);
     try {
@@ -121,8 +124,8 @@ export function ManageCountryTabs() {
         kind: "ok",
         text:
           couCodes.length === 0
-            ? "Cleared — customers will see all Flex countries on registration again."
-            : `Saved ${couCodes.length} registration countr${couCodes.length === 1 ? "y" : "ies"}.`,
+            ? "Cleared — customers will see all Flex countries again."
+            : `Saved ${couCodes.length} countr${couCodes.length === 1 ? "y" : "ies"} of operation.`,
       });
     } catch {
       setMessage({ kind: "err", text: "Network error" });
@@ -156,8 +159,8 @@ export function ManageCountryTabs() {
         kind: "ok",
         text:
           couCodes.length === 0
-            ? "Cleared — no platform countries are enabled."
-            : `Saved ${couCodes.length} platform countr${couCodes.length === 1 ? "y" : "ies"}.`,
+            ? "Cleared — no payout countries are enabled."
+            : `Saved ${couCodes.length} payout countr${couCodes.length === 1 ? "y" : "ies"}.`,
       });
     } catch {
       setMessage({ kind: "err", text: "Network error" });
@@ -166,22 +169,20 @@ export function ManageCountryTabs() {
     }
   }
 
-  const tabs = (
-    [
-      {
-        id: "registration" as const,
-        label: "Registration countries",
-        description:
-          "Controls which countries appear on the customer registration page.",
-      },
-      {
-        id: "platform" as const,
-        label: "Platform countries",
-        description:
-          "Controls the country catalog used for beneficiaries, currency pairs, tariffs, and other payment features.",
-      },
-    ] satisfies { id: TabId; label: string; description: string }[]
-  ).filter((t) => !HIDDEN_TABS.has(t.id));
+  const tabs = [
+    {
+      id: "registration" as const,
+      label: "Countries of Operation",
+      description:
+        "Controls which countries appear on the customer registration page.",
+    },
+    {
+      id: "platform" as const,
+      label: "Payout Countries",
+      description:
+        "Controls the country catalog used for beneficiaries, currency pairs, tariffs, and other payment features.",
+    },
+  ] satisfies { id: TabId; label: string; description: string }[];
 
   const activeTab = tabs.find((t) => t.id === tab) ?? tabs[0]!;
 
@@ -219,13 +220,22 @@ export function ManageCountryTabs() {
           onSelectedChange={setRegistrationSelected}
           loading={loading}
           saving={saving}
+          readOnly={!canEditOperationCountries}
           search={search}
           onSearchChange={setSearch}
           onReload={() => void load()}
           onSave={() => void saveRegistration()}
           message={message}
-          helperText="Only checked countries are shown on customer registration. Uncheck all and save to show the full catalog again."
-          emptySelectionHint="No selection saved — registration shows the full country catalog."
+          helperText={
+            canEditOperationCountries
+              ? "Only checked countries are shown as countries of operation (e.g. customer registration). Uncheck all and save to show the full catalog again."
+              : "Only super admins can change countries of operation."
+          }
+          emptySelectionHint={
+            canEditOperationCountries
+              ? "No selection saved — the full country catalog is shown."
+              : "Only super admins can change countries of operation."
+          }
         />
       ) : (
         <CountryCheckboxList
@@ -239,8 +249,8 @@ export function ManageCountryTabs() {
           onReload={() => void load()}
           onSave={() => void savePlatform()}
           message={message}
-          helperText="Only checked countries are enabled for platform features (beneficiaries, send money, KYC, currency pairs, etc.)."
-          emptySelectionHint="No countries enabled — platform country selectors will be empty until you select and save."
+          helperText="Only checked countries are enabled for payout features (beneficiaries, send money, KYC, currency pairs, etc.)."
+          emptySelectionHint="No countries enabled — payout country selectors will be empty until you select and save."
         />
       )}
     </div>

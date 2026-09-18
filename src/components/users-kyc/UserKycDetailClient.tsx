@@ -29,9 +29,11 @@ export function UserKycDetailClient({
     null,
   );
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setMessage(null);
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) {
+      setLoading(true);
+      setMessage(null);
+    }
     try {
       const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}`, {
         credentials: "same-origin",
@@ -42,15 +44,15 @@ export function UserKycDetailClient({
           kind: "err",
           text: data?.error || data?.message || "Failed to load user.",
         });
-        setUser(null);
+        if (!opts?.silent) setUser(null);
         return;
       }
       setUser((data?.data?.user as AdminKycUser) ?? null);
     } catch {
       setMessage({ kind: "err", text: "Network error." });
-      setUser(null);
+      if (!opts?.silent) setUser(null);
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, [userId]);
 
@@ -148,6 +150,7 @@ export function UserKycDetailClient({
           acting={acting}
           onApprove={(message) => void review("APPROVED", message)}
           onReject={(message) => void review("REJECTED", message)}
+          onJourneyResynced={() => void load({ silent: true })}
         />
       ) : (
         <div className="rounded-xl border border-slate-200 bg-white p-12 text-center text-sm text-slate-500">

@@ -29,6 +29,8 @@ export function CurrencyPairStack({
       <AdminCurrencyPairFlags
         baseCountryCode={baseCountryCode}
         quoteCountryCode={quoteCountryCode}
+        baseCurrency={baseCurrency}
+        quoteCurrency={quoteCurrency}
         size={flagSize === "sm" ? ADMIN_COUNTRY_FLAG_PX.sm : ADMIN_COUNTRY_FLAG_PX.lg}
         eager={eagerFlags}
       />

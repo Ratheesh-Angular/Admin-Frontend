@@ -74,6 +74,10 @@ export type OutboundTransferListRow = {
   payerPhone: string | null;
   flexStkReference: string | null;
   flexStkStatus: string | null;
+  selcomOrderId?: string | null;
+  selcomReference?: string | null;
+  selcomPaymentStatus?: string | null;
+  selcomChannel?: string | null;
   flexPayoutReference: string | null;
   flexPayoutStatus: string | null;
   paymentConfirmedAt: string | null;

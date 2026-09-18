@@ -2,23 +2,20 @@ import { proxyAdminSessionApi } from "@/lib/admin-session-proxy";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const audience = searchParams.get("audience") ?? "";
   const countryCode = searchParams.get("countryCode") ?? "";
   const qs = new URLSearchParams();
-  if (audience) qs.set("audience", audience);
   if (countryCode) qs.set("countryCode", countryCode);
   const query = qs.toString();
   return proxyAdminSessionApi(
-    `/api/admin/tariffs${query ? `?${query}` : ""}`,
+    `/api/admin/source-currency-configs${query ? `?${query}` : ""}`,
   );
 }
 
-export async function POST(request: Request) {
+export async function PUT(request: Request) {
   const body = await request.text();
-  return proxyAdminSessionApi("/api/admin/tariffs", {
-    method: "POST",
+  return proxyAdminSessionApi("/api/admin/source-currency-configs", {
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
     body,
   });
 }
-

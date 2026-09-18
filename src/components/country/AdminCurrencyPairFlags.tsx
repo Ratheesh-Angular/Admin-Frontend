@@ -2,10 +2,13 @@ import {
   AdminCountryFlag,
   ADMIN_COUNTRY_FLAG_PX,
 } from "@/components/country/AdminCountryFlag";
+import { flagCouCodeForCurrency } from "@/lib/country-currency";
 
 type AdminCurrencyPairFlagsProps = {
   baseCountryCode: string;
   quoteCountryCode: string;
+  baseCurrency?: string;
+  quoteCurrency?: string;
   className?: string;
   /** Circle diameter in px. Default `lg` (30px). */
   size?: number;
@@ -19,6 +22,8 @@ type AdminCurrencyPairFlagsProps = {
 export function AdminCurrencyPairFlags({
   baseCountryCode,
   quoteCountryCode,
+  baseCurrency = "",
+  quoteCurrency = "",
   className = "",
   size = ADMIN_COUNTRY_FLAG_PX.lg,
   eager = false,
@@ -26,6 +31,8 @@ export function AdminCurrencyPairFlags({
   const overlap = Math.round(size * 0.62);
   const containerWidth = size + overlap;
   const containerHeight = Math.round(size * 1.28);
+  const baseFlag = flagCouCodeForCurrency(baseCurrency, baseCountryCode);
+  const quoteFlag = flagCouCodeForCurrency(quoteCurrency, quoteCountryCode);
 
   return (
     <div
@@ -35,7 +42,7 @@ export function AdminCurrencyPairFlags({
     >
       <span className="absolute left-0 bottom-0 z-0">
         <AdminCountryFlag
-          couCode={baseCountryCode}
+          couCode={baseFlag}
           size={size}
           variant="white"
           eager={eager}
@@ -43,7 +50,7 @@ export function AdminCurrencyPairFlags({
       </span>
       <span className="absolute z-10" style={{ left: overlap, top: 2 }}>
         <AdminCountryFlag
-          couCode={quoteCountryCode}
+          couCode={quoteFlag}
           size={size}
           variant="white"
           eager={eager}

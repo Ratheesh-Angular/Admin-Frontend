@@ -63,6 +63,11 @@ function KycActivityLog({ history }: { history: KycHistoryEntry[] }) {
           <Clock className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
           <div className="min-w-0">
             <p className="text-sm font-medium text-slate-900">{entry.action}</p>
+            {entry.message ? (
+              <p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap break-words">
+                {entry.message}
+              </p>
+            ) : null}
             <p className="text-xs text-slate-500 mt-0.5">
               {fmtDate(entry.createdAt)}
               {entry.adminEmail ? ` · by ${entry.adminEmail}` : ""}

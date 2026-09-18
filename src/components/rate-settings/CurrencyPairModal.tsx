@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { PlatformCurrencySelect } from "@/components/country/PlatformCurrencySelect";
 import { adminButtonPrimary } from "@/lib/field-styles";
@@ -50,6 +50,24 @@ export function CurrencyPairModal({
     setFormError(null);
   }, [open, initial]);
 
+  const baseCurrency = useMemo(() => {
+    const code = baseCountryCode.toUpperCase();
+    return (
+      options.find((o) => o.couCode === code)?.currencyCode ??
+      initial?.baseCurrency ??
+      ""
+    );
+  }, [baseCountryCode, options, initial?.baseCurrency]);
+
+  const quoteCurrency = useMemo(() => {
+    const code = quoteCountryCode.toUpperCase();
+    return (
+      options.find((o) => o.couCode === code)?.currencyCode ??
+      initial?.quoteCurrency ??
+      ""
+    );
+  }, [quoteCountryCode, options, initial?.quoteCurrency]);
+
   function handleClose() {
     if (saving) return;
     onClose();
@@ -60,9 +78,9 @@ export function CurrencyPairModal({
     if (!baseCountryCode) next.base = "Select a base currency.";
     if (!quoteCountryCode) next.quote = "Select a quote currency.";
     if (
-      baseCountryCode &&
-      quoteCountryCode &&
-      baseCountryCode === quoteCountryCode
+      baseCurrency &&
+      quoteCurrency &&
+      baseCurrency.toUpperCase() === quoteCurrency.toUpperCase()
     ) {
       next.quote = "Quote must differ from base.";
     }
@@ -106,12 +124,7 @@ export function CurrencyPairModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/40"
-        aria-label="Close dialog"
-        onClick={handleClose}
-      />
+      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
       <div
         role="dialog"
         aria-modal="true"
@@ -123,7 +136,7 @@ export function CurrencyPairModal({
               {mode === "edit" ? "Edit currency pair" : "Add currency pair"}
             </h2>
             <p className="text-sm text-slate-500 mt-1">
-              Only platform countries are available.
+              Only platform currencies are available.
             </p>
           </div>
           <button
@@ -155,7 +168,7 @@ export function CurrencyPairModal({
             loading={optionsLoading}
             disabled={saving}
             error={errors.base}
-            excludeCouCode={quoteCountryCode}
+            excludeCurrencyCode={quoteCurrency || undefined}
           />
 
           <PlatformCurrencySelect
@@ -169,7 +182,7 @@ export function CurrencyPairModal({
             loading={optionsLoading}
             disabled={saving}
             error={errors.quote}
-            excludeCouCode={baseCountryCode}
+            excludeCurrencyCode={baseCurrency || undefined}
           />
 
           <div className="flex items-center justify-end gap-3 pt-2">

@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import flexLogo from "../../../assets/logos/flex-logo.png";
+import { FlexLogo } from "@/components/brand/FlexLogo";
 import {
   LayoutDashboard,
   Shield,
@@ -15,6 +14,8 @@ import {
   CreditCard,
   ChevronDown,
   ChevronRight,
+  Coins,
+  Wallet,
 } from "lucide-react";
 
 const usersKycNav = {
@@ -174,6 +175,10 @@ export default function AdminDashboardLayoutClient({
     pathname === "/dashboard" || pathname.startsWith("/dashboard/");
   const isManageCountryActive =
     pathname === "/manage-country" || pathname.startsWith("/manage-country/");
+  const isSourceCurrencyActive =
+    pathname === "/source-currency" || pathname.startsWith("/source-currency/");
+  const isPayInMethodsActive =
+    pathname === "/pay-in-methods" || pathname.startsWith("/pay-in-methods/");
   const isRolesActive = pathname === "/roles" || pathname.startsWith("/roles/");
 
   const roleLabel = adminRole === "SUPER_ADMIN" ? "Super Admin" : "Admin";
@@ -192,12 +197,7 @@ export default function AdminDashboardLayoutClient({
       >
         <div className="border-b border-slate-200">
           <div className="flex flex-col items-center mb-4 mt-4 gap-2">
-            <Image
-              src={flexLogo}
-              alt="Flex Money"
-              priority
-              className="object-contain w-[125px]"
-            />
+            <FlexLogo className="h-8 max-w-[7.5rem]" priority />
             <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700 ring-1 ring-inset ring-indigo-600/20">
               Admin Console
             </span>
@@ -351,6 +351,28 @@ export default function AdminDashboardLayoutClient({
               <Globe className="w-5 h-5" />
             </span>
             Manage Country
+          </Link>
+
+          <Link
+            href="/source-currency"
+            onClick={() => setSidebarOpen(false)}
+            className={navLinkClass(isSourceCurrencyActive)}
+          >
+            <span className="text-base shrink-0">
+              <Coins className="w-5 h-5" />
+            </span>
+            Source Currency
+          </Link>
+
+          <Link
+            href="/pay-in-methods"
+            onClick={() => setSidebarOpen(false)}
+            className={navLinkClass(isPayInMethodsActive)}
+          >
+            <span className="text-base shrink-0">
+              <Wallet className="w-5 h-5" />
+            </span>
+            Pay-in Methods
           </Link>
 
           {adminRole === "SUPER_ADMIN" ? (

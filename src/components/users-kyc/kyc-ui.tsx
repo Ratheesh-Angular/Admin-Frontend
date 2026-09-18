@@ -97,7 +97,7 @@ export function KycBadge({ status }: { status: string }) {
   };
   const labels: Record<string, string> = {
     PENDING: "Pending",
-    IN_PROGRESS: "Verification in progress",
+    IN_PROGRESS: "InProgress",
     SUBMITTED: "Under review",
     APPROVED: "Approved",
     REJECTED: "Rejected",

@@ -117,6 +117,27 @@ export function legalCurrencyForCouCode(couCode: string): string {
   return COU_CODE_TO_CURRENCY[a3] ?? "USD";
 }
 
+/** Preferred ISO3 country when several platform countries share a currency. */
+export const CURRENCY_CANONICAL_COUNTRY: Record<string, string> = {
+  EUR: "DEU",
+  XOF: "SEN",
+  XAF: "CMR",
+  CHF: "CHE",
+  USD: "USA",
+};
+
+/**
+ * Flag code for currency UIs (flagcdn alpha-2 / special).
+ * EUR uses the EU flag instead of a single eurozone country.
+ */
+export function flagCouCodeForCurrency(
+  currencyCode: string,
+  fallbackCouCode: string,
+): string {
+  if (currencyCode.trim().toUpperCase() === "EUR") return "EU";
+  return fallbackCouCode;
+}
+
 export type PlatformCurrencyOption = {
   couCode: string;
   couName: string;
@@ -133,4 +154,64 @@ export function toPlatformCurrencyOptions(
       currencyCode: legalCurrencyForCouCode(c.couCode),
     }))
     .sort((a, b) => a.currencyCode.localeCompare(b.currencyCode));
+}
+
+/**
+ * Pick a stable display country for a currency among platform countries.
+ * Prefers CURRENCY_CANONICAL_COUNTRY when that country is present; else first alpha.
+ */
+export function canonicalCouCodeForCurrency(
+  currencyCode: string,
+  platformCountries: { couCode: string; couName: string }[],
+): string | null {
+  const currency = currencyCode.trim().toUpperCase();
+  if (!currency) return null;
+
+  const matching = platformCountries
+    .map((c) => ({
+      couCode: c.couCode.trim().toUpperCase(),
+      couName: c.couName,
+    }))
+    .filter((c) => c.couCode && legalCurrencyForCouCode(c.couCode) === currency)
+    .sort((a, b) => a.couCode.localeCompare(b.couCode));
+
+  if (matching.length === 0) return null;
+
+  const preferred = CURRENCY_CANONICAL_COUNTRY[currency];
+  if (preferred && matching.some((c) => c.couCode === preferred)) {
+    return preferred;
+  }
+  return matching[0].couCode;
+}
+
+/** One option per currency code (canonical country for flags). */
+export function dedupePlatformCurrenciesByCode(
+  options: PlatformCurrencyOption[],
+): PlatformCurrencyOption[] {
+  const byCurrency = new Map<string, PlatformCurrencyOption[]>();
+  for (const option of options) {
+    const code = option.currencyCode.trim().toUpperCase();
+    const list = byCurrency.get(code) ?? [];
+    list.push({
+      ...option,
+      couCode: option.couCode.toUpperCase(),
+      currencyCode: code,
+    });
+    byCurrency.set(code, list);
+  }
+
+  const deduped: PlatformCurrencyOption[] = [];
+  for (const [currency, list] of byCurrency) {
+    const countries = list.map((o) => ({
+      couCode: o.couCode,
+      couName: o.couName,
+    }));
+    const canonical = canonicalCouCodeForCurrency(currency, countries);
+    const chosen =
+      list.find((o) => o.couCode === canonical) ??
+      [...list].sort((a, b) => a.couCode.localeCompare(b.couCode))[0];
+    deduped.push(chosen);
+  }
+
+  return deduped.sort((a, b) => a.currencyCode.localeCompare(b.currencyCode));
 }

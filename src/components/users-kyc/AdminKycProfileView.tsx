@@ -1,10 +1,26 @@
 "use client";
 
 import { useState } from "react";
-import { ClipboardCheck, Download, ExternalLink, FileText, FolderOpen, User } from "lucide-react";
+import {
+  ClipboardCheck,
+  Download,
+  ExternalLink,
+  FileText,
+  FolderOpen,
+  Route,
+  User,
+} from "lucide-react";
 import { documentTypeLabel } from "@/lib/kyc/documentLabels";
 import { fmtDateTime } from "@/lib/payments/transfer-format";
 import { KycReviewPanel, type KycHistoryEntry } from "./KycReviewPanel";
+import {
+  SignzyJourneyPanel,
+  type AdminKycJourney,
+} from "./SignzyJourneyPanel";
+import {
+  SignzyDocumentGallery,
+  galleryItemsFromJourney,
+} from "./SignzyDocumentGallery";
 import {
   DetailRow,
   DocStatusBadge,
@@ -16,7 +32,7 @@ import {
   SectionCard,
 } from "./kyc-ui";
 
-type TabId = "account" | "verification" | "documents" | "review";
+type TabId = "account" | "verification" | "journey" | "documents" | "review";
 
 export type AdminKycUser = Record<string, unknown>;
 
@@ -26,6 +42,7 @@ type AdminKycProfileViewProps = {
   acting?: "APPROVED" | "REJECTED" | null;
   onApprove?: (message: string) => void;
   onReject?: (message: string) => void;
+  onJourneyResynced?: () => void;
 };
 
 function CorporateKeyPersonnelList({ value }: { value: unknown }) {
@@ -141,16 +158,19 @@ export function AdminKycProfileView({
   acting = null,
   onApprove,
   onReject,
+  onJourneyResynced,
 }: AdminKycProfileViewProps) {
   const [tab, setTab] = useState<TabId>("account");
   const [downloadingZip, setDownloadingZip] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const role = String(user.role ?? "");
+  const isIndividual = role === "INDIVIDUAL";
   const kycStatus = String(user.kycStatus ?? "");
   const individual = user.individualProfile as Record<string, unknown> | null;
   const corporate = user.corporateProfile as Record<string, unknown> | null;
   const documents = (user.documents as Array<Record<string, unknown>>) ?? [];
+  const kycJourneys = (user.kycJourneys as AdminKycJourney[] | undefined) ?? [];
   const kycHistory = (user.kycHistory as KycHistoryEntry[] | undefined) ?? [];
   const recipientName =
     (role === "CORPORATE"
@@ -194,6 +214,9 @@ export function AdminKycProfileView({
   const tabs: { id: TabId; label: string; icon: typeof User }[] = [
     { id: "account", label: "Account", icon: User },
     { id: "verification", label: "Verification", icon: FileText },
+    ...(isIndividual
+      ? [{ id: "journey" as const, label: "Journey", icon: Route }]
+      : []),
     { id: "documents", label: "Documents", icon: FolderOpen },
     { id: "review", label: "KYC review", icon: ClipboardCheck },
   ];
@@ -340,61 +363,12 @@ export function AdminKycProfileView({
                   />
                 </dl>
               </SectionCard>
-              <SectionCard title="Identity documents" description="Passport, national ID, and work permit">
-                <dl>
-                  {individual?.isNational ? (
-                    <DetailRow
-                      label="Primary document (citizen)"
-                      value={
-                        individual?.citizenPrimaryDocumentType === "PASSPORT"
-                          ? "Passport"
-                          : individual?.citizenPrimaryDocumentType === "NATIONAL_ID"
-                            ? "National ID"
-                            : "—"
-                      }
-                    />
-                  ) : null}
-                  <DetailRow label="Passport number" value={individual?.passportNumber as string} />
-                  <DetailRow
-                    label="Passport issuing country"
-                    value={individual?.passportIssuingCountry as string}
-                  />
-                  <DetailRow
-                    label="Passport issued"
-                    value={fmtDate(individual?.passportIssue as string | undefined)}
-                  />
-                  <DetailRow
-                    label="Passport expires"
-                    value={fmtDate(individual?.passportExpiry as string | undefined)}
-                  />
-                  <DetailRow label="National ID number" value={individual?.nationalIdNumber as string} />
-                  <DetailRow
-                    label="National ID issuing country"
-                    value={individual?.nationalIdIssuingCountry as string}
-                  />
-                  <DetailRow
-                    label="National ID issued"
-                    value={fmtDate(individual?.nationalIdIssue as string | undefined)}
-                  />
-                  <DetailRow label="Work permit number" value={individual?.workPermitNumber as string} />
-                  <DetailRow
-                    label="Work permit issued"
-                    value={fmtDate(individual?.workPermitIssue as string | undefined)}
-                  />
-                  <DetailRow
-                    label="Work permit expires"
-                    value={fmtDate(individual?.workPermitExpiry as string | undefined)}
-                  />
-                </dl>
-              </SectionCard>
-              <SectionCard title="Address, contact & employment" description="Residence and occupation">
+              <SectionCard title="Address & contact" description="Residence and contact">
                 <dl>
                   {residenceDetailRows(individual).map((row) => (
                     <DetailRow key={row.label} label={row.label} value={row.value} wide />
                   ))}
                   <DetailRow label="Country" value={individual?.country as string} />
-                  <DetailRow label="Occupation" value={individual?.occupation as string} />
-                  <DetailRow label="Employer" value={individual?.employerName as string} />
                 </dl>
               </SectionCard>
             </>
@@ -402,74 +376,104 @@ export function AdminKycProfileView({
         </div>
       )}
 
+      {tab === "journey" && isIndividual ? (
+        <SignzyJourneyPanel
+          userId={userId}
+          journeys={kycJourneys}
+          onResynced={onJourneyResynced}
+        />
+      ) : null}
+
       {tab === "documents" && (
-        <SectionCard
-          title="Uploaded documents"
-          description="Files submitted for verification"
-          action={
-            documents.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => void handleDownloadAll()}
-                disabled={downloadingZip}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 h-9 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                <Download className="w-4 h-4" />
-                {downloadingZip ? "Preparing…" : "Download all"}
-              </button>
-            ) : null
-          }
-        >
-          {downloadError ? (
-            <p className="text-sm text-red-600 mb-3">{downloadError}</p>
+        <div className="space-y-6">
+          {isIndividual ? (
+            <SignzyDocumentGallery
+              items={
+                kycJourneys[0]
+                  ? galleryItemsFromJourney(kycJourneys[0])
+                  : []
+              }
+              journeyId={kycJourneys[0]?.journeyId ?? null}
+              documentType={kycJourneys[0]?.documentType ?? null}
+              userId={userId}
+              onResynced={onJourneyResynced}
+              title="Signzy documents"
+              description="Document captures from the latest Signzy verification journey"
+            />
           ) : null}
-          {documents.length === 0 ? (
-            <p className="text-sm text-slate-500 py-4">No documents uploaded.</p>
-          ) : (
-            <div className="overflow-x-auto -mx-5 px-5">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                    <th className="pb-2 pr-4">Type</th>
-                    <th className="pb-2 pr-4">File</th>
-                    <th className="pb-2 pr-4">Status</th>
-                    <th className="pb-2">Uploaded</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {documents.map((doc) => (
-                    <tr key={String(doc.id)} className="align-top">
-                      <td className="py-3 pr-4 text-slate-900">
-                        {documentTypeLabel(String(doc.documentType))}
-                      </td>
-                      <td className="py-3 pr-4">
-                        {doc.fileUrl ? (
-                          <a
-                            href={String(doc.fileUrl)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-indigo-600 hover:text-indigo-700 font-medium inline-flex items-center gap-1"
-                          >
-                            {String(doc.fileName ?? "View")}
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </a>
-                        ) : (
-                          String(doc.fileName ?? "—")
-                        )}
-                      </td>
-                      <td className="py-3 pr-4">
-                        <DocStatusBadge status={String(doc.status)} />
-                      </td>
-                      <td className="py-3 text-slate-600">
-                        {fmtDate(doc.uploadedAt as string | undefined)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </SectionCard>
+
+          {!isIndividual || documents.length > 0 ? (
+            <SectionCard
+              title="Uploaded documents"
+              description="Files submitted for verification"
+              action={
+                documents.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleDownloadAll()}
+                    disabled={downloadingZip}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 h-9 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    <Download className="w-4 h-4" />
+                    {downloadingZip ? "Preparing…" : "Download all"}
+                  </button>
+                ) : null
+              }
+            >
+              {downloadError ? (
+                <p className="text-sm text-red-600 mb-3">{downloadError}</p>
+              ) : null}
+              {documents.length === 0 ? (
+                <p className="text-sm text-slate-500 py-4">
+                  No documents uploaded.
+                </p>
+              ) : (
+                <div className="overflow-x-auto -mx-5 px-5">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
+                        <th className="pb-2 pr-4">Type</th>
+                        <th className="pb-2 pr-4">File</th>
+                        <th className="pb-2 pr-4">Status</th>
+                        <th className="pb-2">Uploaded</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {documents.map((doc) => (
+                        <tr key={String(doc.id)} className="align-top">
+                          <td className="py-3 pr-4 text-slate-900">
+                            {documentTypeLabel(String(doc.documentType))}
+                          </td>
+                          <td className="py-3 pr-4">
+                            {doc.fileUrl ? (
+                              <a
+                                href={String(doc.fileUrl)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-indigo-600 hover:text-indigo-700 font-medium inline-flex items-center gap-1"
+                              >
+                                {String(doc.fileName ?? "View")}
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
+                            ) : (
+                              String(doc.fileName ?? "—")
+                            )}
+                          </td>
+                          <td className="py-3 pr-4">
+                            <DocStatusBadge status={String(doc.status)} />
+                          </td>
+                          <td className="py-3 text-slate-600">
+                            {fmtDate(doc.uploadedAt as string | undefined)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </SectionCard>
+          ) : null}
+        </div>
       )}
 
       {tab === "review" && onApprove && onReject ? (

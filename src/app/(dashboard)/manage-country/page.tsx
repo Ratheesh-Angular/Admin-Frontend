@@ -7,8 +7,7 @@ export default function ManageCountryPage() {
         Manage Country
       </h1>
       <p className="text-slate-500 mt-1 text-sm">
-        Configure which countries are available for customer registration and
-        for platform payment features.
+        Configure countries of operation and payout countries.
       </p>
       <div className="mt-6">
         <ManageCountryTabs />

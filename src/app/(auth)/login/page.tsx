@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
-import flexLogo from "../../../../assets/logos/flex-logo.png";
+import { FlexLogo } from "@/components/brand/FlexLogo";
 import { AdminLoadingOverlay } from "@/components/ui/AdminLoadingOverlay";
 import { PasswordField } from "@/components/auth/PasswordField";
 import {
@@ -92,12 +91,7 @@ export default function AdminLoginPage() {
       <AdminLoadingOverlay show={isLoading} label="Signing in…" />
       <div className="w-full max-w-md bg-white border border-slate-200 rounded-xl shadow-sm p-8">
         <div className="flex justify-center mb-6">
-          <Image
-            src={flexLogo}
-            alt="Flex Money"
-            priority
-            className="object-contain w-[125px]"
-          />
+          <FlexLogo priority />
         </div>
 
         <div className="mb-1 flex items-center justify-center gap-2">

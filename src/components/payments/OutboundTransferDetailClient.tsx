@@ -431,6 +431,26 @@ export function OutboundTransferDetailClient({
                       />
                     </>
                   ) : null}
+                  {transfer.payInMethod === "CARD" ? (
+                    <>
+                      <DetailRow
+                        label="Selcom order ID"
+                        value={transfer.selcomOrderId}
+                      />
+                      <DetailRow
+                        label="Selcom reference"
+                        value={transfer.selcomReference}
+                      />
+                      <DetailRow
+                        label="Selcom payment status"
+                        value={transfer.selcomPaymentStatus}
+                      />
+                      <DetailRow
+                        label="Selcom channel"
+                        value={transfer.selcomChannel}
+                      />
+                    </>
+                  ) : null}
                   <DetailRow
                     label="Payout reference"
                     value={transfer.flexPayoutReference}
