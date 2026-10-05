@@ -17,6 +17,8 @@ export type AdminDataTableProps<T> = {
   columns: AdminDataTableColumn<T>[];
   data: T[];
   getRowKey: (row: T) => string;
+  /** Extra classes for a row, e.g. status highlight. */
+  getRowClassName?: (row: T) => string;
   search: string;
   onSearchChange: (value: string) => void;
   searchPlaceholder?: string;
@@ -64,6 +66,7 @@ export function AdminDataTable<T>({
   columns,
   data,
   getRowKey,
+  getRowClassName,
   search,
   onSearchChange,
   searchPlaceholder = "Search…",
@@ -143,7 +146,10 @@ export function AdminDataTable<T>({
               </tr>
             ) : (
               pageRows.map((row) => (
-                <tr key={getRowKey(row)} className="text-slate-700 hover:bg-slate-50/60">
+                <tr
+                  key={getRowKey(row)}
+                  className={`text-slate-700 hover:bg-slate-50/60 ${getRowClassName?.(row) ?? ""}`}
+                >
                   {columns.map((col) => (
                     <td
                       key={col.id}

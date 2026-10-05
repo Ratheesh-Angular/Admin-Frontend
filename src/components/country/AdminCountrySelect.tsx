@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 import type { CountryRow } from "@/lib/registration-countries";
@@ -53,7 +53,7 @@ export function AdminCountrySelect({
     setMounted(true);
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
 
     function updatePosition() {
@@ -83,6 +83,7 @@ export function AdminCountrySelect({
     return () => {
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
+      setPanelStyle({});
     };
   }, [open]);
 
@@ -167,8 +168,8 @@ export function AdminCountrySelect({
           setSearch("");
         }}
         className={`${fieldControlBase} flex items-center justify-between gap-2 text-left ${
-          error ? fieldControlError : ""
-        }`}
+          open ? "ring-2 ring-indigo-500/20 border-indigo-600" : ""
+        } ${error ? fieldControlError : ""}`}
       >
         {loading ? (
           <span className="text-slate-400">Loading…</span>
@@ -185,7 +186,9 @@ export function AdminCountrySelect({
         )}
         <ChevronDown className="w-4 h-4 shrink-0 text-slate-400" />
       </button>
-      {mounted && dropdown ? createPortal(dropdown, document.body) : null}
+      {mounted && dropdown && panelStyle.position
+        ? createPortal(dropdown, document.body)
+        : null}
       {error ? <p className="text-xs text-red-500">{error}</p> : null}
     </div>
   );

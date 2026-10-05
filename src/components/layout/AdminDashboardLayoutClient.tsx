@@ -30,7 +30,6 @@ const usersKycNav = {
 } as const;
 
 const HIDDEN_RATE_SETTINGS_HREFS = new Set([
-  "/rate-settings/exchange-rates",
   "/rate-settings/partners-rate-engine",
 ]);
 
