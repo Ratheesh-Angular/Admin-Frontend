@@ -184,7 +184,7 @@ export default function AdminLoginPage() {
 
     // Paste / autofill: distribute digits across boxes
     if (digits.length > 1) {
-      const next = [...EMPTY_OTP];
+      const next: string[] = [...EMPTY_OTP];
       const chars = digits.slice(0, 6).split("");
       chars.forEach((d, i) => {
         next[i] = d;
