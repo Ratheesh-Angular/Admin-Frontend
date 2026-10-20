@@ -24,6 +24,21 @@ export function fmtDateTime(value: string | null | undefined): string {
   });
 }
 
+/** Full date + time with seconds for activity / audit timelines. */
+export function fmtLogDateTime(value: string | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 export function fmtDate(value: string | null | undefined): string {
   if (!value) return "—";
   const d = new Date(value);

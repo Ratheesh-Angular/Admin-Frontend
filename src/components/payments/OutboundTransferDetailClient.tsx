@@ -10,11 +10,13 @@ import {
   CheckCircle2,
   ExternalLink,
   FileText,
+  ScrollText,
   User,
   Wallet,
   X,
 } from "lucide-react";
 import { DetailRow, SectionCard, TransferStatusBadge } from "./transfer-ui";
+import { TransferActivityLog } from "./TransferActivityLog";
 import {
   TransferReviewActionModal,
   type TransferReviewAction,
@@ -35,7 +37,8 @@ type TabId =
   | "beneficiary"
   | "customer"
   | "compliance"
-  | "accept";
+  | "accept"
+  | "logs";
 
 type PayoutDebug = {
   label: string | null;
@@ -57,6 +60,7 @@ const TABS: { id: TabId; label: string; icon: typeof FileText }[] = [
   { id: "customer", label: "Customer", icon: Building2 },
   { id: "compliance", label: "Compliance", icon: FileText },
   { id: "accept", label: "Accept transfer", icon: CheckCircle2 },
+  { id: "logs", label: "Logs", icon: ScrollText },
 ];
 
 const ACCEPTABLE_ACCEPT_STATUSES = new Set([
@@ -860,6 +864,15 @@ export function OutboundTransferDetailClient({
                     </div>
                   ) : null}
                 </div>
+              </SectionCard>
+            )}
+
+            {tab === "logs" && (
+              <SectionCard
+                title="Transfer activity"
+                description="From creation to payout — date and time for every step"
+              >
+                <TransferActivityLog logs={transfer.logs ?? []} />
               </SectionCard>
             )}
           </>

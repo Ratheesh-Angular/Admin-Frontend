@@ -92,6 +92,20 @@ export type OutboundTransferListRow = {
   beneficiary: OutboundTransferBeneficiarySummary | null;
 };
 
+export type OutboundTransferLog = {
+  id: string;
+  eventType: string;
+  title: string;
+  message: string | null;
+  fromStatus: string | null;
+  toStatus: string | null;
+  actorType: "CUSTOMER" | "ADMIN" | "SYSTEM" | "PROVIDER" | string;
+  actorId: string | null;
+  actorLabel: string | null;
+  metadata: unknown;
+  createdAt: string;
+};
+
 export type OutboundTransferDetail = OutboundTransferListRow & {
   quoteExpiresAt: string | null;
   sourceOfIncome: string | null;
@@ -101,6 +115,7 @@ export type OutboundTransferDetail = OutboundTransferListRow & {
   beneficiary: OutboundTransferBeneficiary | null;
   paymentProofs: OutboundTransferFile[];
   supportingDocuments: OutboundTransferFile[];
+  logs?: OutboundTransferLog[];
 };
 
 export type CorporateCustomerOption = {

@@ -103,7 +103,7 @@ export function ExchangeRatesClient() {
   return (
     <RateSettingsPageShell
       title="Exchange rates"
-      description="Add a margin to the Flex offered rate for each currency pair. Customers get the customer rate only after you activate it with Set rate."
+      description="Set a signed margin on the Flex offered rate for each currency pair (negative lowers the customer rate, positive raises it). Customers get the customer rate only after you activate it with Set rate."
     >
       <div className="space-y-6">
         {countriesError ? (

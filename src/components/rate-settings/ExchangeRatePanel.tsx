@@ -115,15 +115,14 @@ function buildRowView(row: ExchangeRateRow, draft: string): RowView {
   let marginError: string | null = null;
   if (marginNum != null) {
     if (!Number.isFinite(marginNum)) marginError = "Enter a valid number.";
-    else if (marginNum < 0) marginError = "Margin cannot be negative.";
   }
   const marginValid = marginNum != null && marginError == null;
 
   let previewRate: number | null = null;
   if (marginValid && row.offeredRate != null) {
-    previewRate = row.offeredRate - marginNum!;
+    previewRate = row.offeredRate + marginNum!;
     if (previewRate <= 0) {
-      marginError = "Margin must be lower than the offered rate.";
+      marginError = "Customer rate must stay above zero.";
       previewRate = null;
     }
   }
@@ -494,8 +493,8 @@ export function ExchangeRatePanel({
             v.row.setting && !v.row.setting.active ? v.row.setting.margin : null;
           const marginNum = Number(v.draft);
           const pct =
-            v.marginValid && v.row.offeredRate
-              ? (marginNum / v.row.offeredRate) * 100
+            v.marginValid && v.row.offeredRate && marginNum !== 0
+              ? (Math.abs(marginNum) / v.row.offeredRate) * 100
               : null;
           return (
             <div className="w-40">
@@ -506,9 +505,6 @@ export function ExchangeRatePanel({
                     : "border-slate-200 focus-within:border-indigo-600 focus-within:ring-indigo-500/20"
                 }`}
               >
-                <span className="pl-2.5 pr-1 text-slate-400 text-sm select-none">
-                  −
-                </span>
                 <input
                   type="text"
                   inputMode="decimal"
@@ -520,12 +516,12 @@ export function ExchangeRatePanel({
                   placeholder="0.00"
                   disabled={v.row.offeredRate == null || savingId === id}
                   aria-label={`Margin for ${pairLabel(v.row.currencyPair)}`}
-                  className="w-full min-w-0 pr-2.5 text-sm tabular-nums outline-none bg-transparent disabled:text-slate-400"
+                  className="w-full min-w-0 px-2.5 text-sm tabular-nums outline-none bg-transparent disabled:text-slate-400"
                 />
               </div>
               {v.marginError ? (
                 <p className="mt-1 text-xs text-red-600">{v.marginError}</p>
-              ) : pct != null && marginNum > 0 ? (
+              ) : pct != null ? (
                 <p className="mt-1 text-xs text-slate-500">
                   ≈ {pct.toLocaleString(undefined, { maximumFractionDigits: 2 })}% of
                   offered
@@ -700,7 +696,7 @@ export function ExchangeRatePanel({
         loading={loading || !countryReady}
         emptyMessage={
           countryReady
-            ? `No tariffs configured for ${countryName || "this country"} yet. Add tariffs to manage exchange rates.`
+            ? `No exchange rates available for ${countryName || "this country"} (local currency and USD pairs with an offered rate). Add tariffs if needed, then refresh.`
             : "Select a country to manage exchange rates."
         }
         filteredEmptyMessage="No currency pairs match your search."
@@ -718,9 +714,10 @@ export function ExchangeRatePanel({
       />
 
       <p className="text-xs text-slate-500">
-        Customer rate = offered rate − margin. When a rate is active, customers
-        sending from {countryName || "this country"} get the live Flex rate minus
-        your margin. Without an active rate, they get the Flex offered rate.
+        Customer rate = offered rate + margin (negative lowers, positive raises).
+        When a rate is active, customers sending from{" "}
+        {countryName || "this country"} get the live Flex rate adjusted by your
+        margin. Without an active rate, they get the Flex offered rate.
       </p>
     </div>
   );
