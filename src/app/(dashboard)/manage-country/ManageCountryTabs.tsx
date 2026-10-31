@@ -100,9 +100,7 @@ export function ManageCountryTabs() {
     if (!r.ok) {
       throw new Error(j.error || j.message || "Failed to load payout countries");
     }
-    setPlatformSelected(
-      new Set(filterToUnlockedCodes(parseCatalogSelection(j))),
-    );
+    setPlatformSelected(parseCatalogSelection(j));
   }, []);
 
   useEffect(() => {
@@ -243,7 +241,7 @@ export function ManageCountryTabs() {
     setSaving(true);
     setMessage(null);
     try {
-      const couCodes = filterToUnlockedCodes(platformSelected).filter((c) =>
+      const couCodes = [...platformSelected].filter((c) =>
         rows.some((r) => r.couCode === c),
       );
       const r = await fetch("/api/admin/catalog-countries", {
@@ -263,9 +261,7 @@ export function ManageCountryTabs() {
         });
         return;
       }
-      setPlatformSelected(
-        new Set(filterToUnlockedCodes(parseCatalogSelection(j))),
-      );
+      setPlatformSelected(parseCatalogSelection(j));
       setMessage({
         kind: "ok",
         text:
@@ -376,7 +372,6 @@ export function ManageCountryTabs() {
               rows={rows}
               selected={platformSelected}
               onSelectedChange={setPlatformSelected}
-              unlockedCodes={MANAGE_COUNTRY_UNLOCKED_SET}
               loading={loading || opCountriesLoading}
               saving={saving}
               search={search}
@@ -384,7 +379,7 @@ export function ManageCountryTabs() {
               onReload={() => void load()}
               onSave={() => void savePlatform()}
               message={message}
-              helperText={`Payout destinations for ${operationCountryCode || "…"}. Only unlocked corridors can be toggled.`}
+              helperText={`Payout destinations for ${operationCountryCode || "…"}. Check the countries customers can send to, then save.`}
               emptySelectionHint={`No payout countries enabled for ${operationCountryCode || "this country"} — customers from this country will see an empty destination list until you select and save.`}
             />
           )}

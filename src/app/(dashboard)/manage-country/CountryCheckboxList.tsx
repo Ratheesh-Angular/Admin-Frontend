@@ -9,7 +9,8 @@ type CountryCheckboxListProps = {
   rows: CountryRow[];
   selected: Set<string>;
   onSelectedChange: (next: Set<string>) => void;
-  unlockedCodes: ReadonlySet<string>;
+  /** When omitted, every country is selectable (no lock). */
+  unlockedCodes?: ReadonlySet<string>;
   loading?: boolean;
   saving?: boolean;
   readOnly?: boolean;
@@ -38,6 +39,8 @@ export function CountryCheckboxList({
   helperText,
   emptySelectionHint,
 }: CountryCheckboxListProps) {
+  const allUnlocked = unlockedCodes == null;
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const matched = !q
@@ -62,8 +65,11 @@ export function CountryCheckboxList({
   }, [rows, search, selected]);
 
   const unlockedRows = useMemo(
-    () => rows.filter((r) => unlockedCodes.has(r.couCode)),
-    [rows, unlockedCodes],
+    () =>
+      allUnlocked
+        ? rows
+        : rows.filter((r) => unlockedCodes!.has(r.couCode)),
+    [rows, unlockedCodes, allUnlocked],
   );
 
   const selectionActive = selected.size > 0;
@@ -139,7 +145,7 @@ export function CountryCheckboxList({
 
       <ul className="border border-slate-200 rounded-xl bg-white divide-y divide-slate-100 max-h-[min(60vh,520px)] overflow-y-auto">
         {filtered.map((r) => {
-          const locked = !unlockedCodes.has(r.couCode);
+          const locked = !allUnlocked && !unlockedCodes!.has(r.couCode);
           const disabled = readOnly || locked;
           const on = !locked && selected.has(r.couCode);
           return (
