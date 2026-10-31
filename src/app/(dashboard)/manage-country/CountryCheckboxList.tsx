@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { Lock } from "lucide-react";
 
 export type CountryRow = { couCode: string; couName: string };
 
@@ -8,6 +9,7 @@ type CountryCheckboxListProps = {
   rows: CountryRow[];
   selected: Set<string>;
   onSelectedChange: (next: Set<string>) => void;
+  unlockedCodes: ReadonlySet<string>;
   loading?: boolean;
   saving?: boolean;
   readOnly?: boolean;
@@ -24,6 +26,7 @@ export function CountryCheckboxList({
   rows,
   selected,
   onSelectedChange,
+  unlockedCodes,
   loading = false,
   saving = false,
   readOnly = false,
@@ -37,13 +40,31 @@ export function CountryCheckboxList({
 }: CountryCheckboxListProps) {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
-      (r) =>
-        r.couName.toLowerCase().includes(q) ||
-        r.couCode.toLowerCase().includes(q),
-    );
-  }, [rows, search]);
+    const matched = !q
+      ? rows
+      : rows.filter(
+          (r) =>
+            r.couName.toLowerCase().includes(q) ||
+            r.couCode.toLowerCase().includes(q),
+        );
+
+    const byName = (a: CountryRow, b: CountryRow) =>
+      a.couName.localeCompare(b.couName, undefined, { sensitivity: "base" });
+
+    const checked = matched
+      .filter((r) => selected.has(r.couCode))
+      .sort(byName);
+    const rest = matched
+      .filter((r) => !selected.has(r.couCode))
+      .sort(byName);
+
+    return [...checked, ...rest];
+  }, [rows, search, selected]);
+
+  const unlockedRows = useMemo(
+    () => rows.filter((r) => unlockedCodes.has(r.couCode)),
+    [rows, unlockedCodes],
+  );
 
   const selectionActive = selected.size > 0;
 
@@ -77,7 +98,9 @@ export function CountryCheckboxList({
           <>
             <button
               type="button"
-              onClick={() => onSelectedChange(new Set(rows.map((r) => r.couCode)))}
+              onClick={() =>
+                onSelectedChange(new Set(unlockedRows.map((r) => r.couCode)))
+              }
               className="text-sm font-medium text-indigo-700 hover:text-indigo-800"
             >
               Select all
@@ -116,7 +139,9 @@ export function CountryCheckboxList({
 
       <ul className="border border-slate-200 rounded-xl bg-white divide-y divide-slate-100 max-h-[min(60vh,520px)] overflow-y-auto">
         {filtered.map((r) => {
-          const on = selected.has(r.couCode);
+          const locked = !unlockedCodes.has(r.couCode);
+          const disabled = readOnly || locked;
+          const on = !locked && selected.has(r.couCode);
           return (
             <li
               key={`${r.couCode}-${r.couName}`}
@@ -126,9 +151,9 @@ export function CountryCheckboxList({
                 type="checkbox"
                 id={`c-${r.couCode}`}
                 checked={on}
-                disabled={readOnly}
+                disabled={disabled}
                 onChange={() => {
-                  if (readOnly) return;
+                  if (disabled) return;
                   const next = new Set(selected);
                   if (next.has(r.couCode)) next.delete(r.couCode);
                   else next.add(r.couCode);
@@ -138,13 +163,32 @@ export function CountryCheckboxList({
               />
               <label
                 htmlFor={`c-${r.couCode}`}
-                className={`flex-1 text-sm ${readOnly ? "cursor-default" : "cursor-pointer"}`}
+                className={`flex-1 text-sm ${
+                  disabled ? "cursor-default" : "cursor-pointer"
+                }`}
               >
-                <span className="font-medium text-slate-900">{r.couName}</span>
-                <span className="ml-2 text-slate-400 font-mono text-xs">
+                <span
+                  className={`font-medium ${
+                    locked ? "text-slate-400" : "text-slate-900"
+                  }`}
+                >
+                  {r.couName}
+                </span>
+                <span
+                  className={`ml-2 font-mono text-xs ${
+                    locked ? "text-slate-300" : "text-slate-400"
+                  }`}
+                >
                   {r.couCode}
                 </span>
               </label>
+              {locked && (
+                <Lock
+                  className="h-3.5 w-3.5 shrink-0 text-slate-400"
+                  aria-hidden
+                  strokeWidth={1.75}
+                />
+              )}
             </li>
           );
         })}

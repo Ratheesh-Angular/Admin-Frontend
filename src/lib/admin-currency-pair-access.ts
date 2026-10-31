@@ -7,7 +7,7 @@
 import { legalCurrencyForCouCode } from "@/lib/country-currency";
 
 export type AdminScopeClient = {
-  role: "SUPER_ADMIN" | "ADMIN";
+  role: string;
   countryCodes: string[];
 };
 

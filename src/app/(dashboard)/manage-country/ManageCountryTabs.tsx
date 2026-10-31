@@ -1,28 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAdminSession } from "@/hooks/useAdminSession";
+import { AdminCountrySelect } from "@/components/country/AdminCountrySelect";
+import {
+  fetchRegistrationCountries,
+  parseFlexCountryRows,
+  type CountryRow as RegCountryRow,
+} from "@/lib/registration-countries";
 import {
   CountryCheckboxList,
   type CountryRow,
 } from "./CountryCheckboxList";
+import {
+  filterToUnlockedCodes,
+  MANAGE_COUNTRY_UNLOCKED_SET,
+} from "./unlocked-countries";
 
 type TabId = "registration" | "platform";
 
 function parseFlexRows(res: { data?: unknown }): CountryRow[] {
-  const flexBody = res?.data;
-  const inner = flexBody as { data?: { data?: unknown } } | undefined;
-  const arr = Array.isArray(inner?.data?.data)
-    ? inner!.data!.data
-    : Array.isArray((flexBody as { data?: unknown[] })?.data)
-      ? (flexBody as { data: unknown[] }).data
-      : [];
-  return (arr as unknown[])
-    .map((r) => ({
-      couCode: String((r as CountryRow).couCode ?? "").trim().toUpperCase(),
-      couName: String((r as CountryRow).couName ?? "").trim(),
-    }))
-    .filter((r) => r.couCode && r.couName);
+  return parseFlexCountryRows(res);
 }
 
 function parseCatalogSelection(res: { data?: unknown }): Set<string> {
@@ -37,8 +35,13 @@ function parseCatalogSelection(res: { data?: unknown }): Set<string> {
 }
 
 export function ManageCountryTabs() {
-  const { session } = useAdminSession();
+  const { session, loading: sessionLoading } = useAdminSession();
   const canEditOperationCountries = session?.role === "SUPER_ADMIN";
+  const isSuperAdmin = session?.role === "SUPER_ADMIN";
+  const assignedCodes = useMemo(
+    () => session?.countryCodes ?? [],
+    [session?.countryCodes],
+  );
 
   const [tab, setTab] = useState<TabId>("platform");
   const [rows, setRows] = useState<CountryRow[]>([]);
@@ -48,6 +51,9 @@ export function ManageCountryTabs() {
   const [platformSelected, setPlatformSelected] = useState<Set<string>>(
     new Set(),
   );
+  const [opCountries, setOpCountries] = useState<RegCountryRow[]>([]);
+  const [opCountriesLoading, setOpCountriesLoading] = useState(true);
+  const [operationCountryCode, setOperationCountryCode] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(
@@ -55,58 +61,155 @@ export function ManageCountryTabs() {
   );
   const [search, setSearch] = useState("");
 
+  const showCountrySelect =
+    Boolean(session) && (isSuperAdmin || assignedCodes.length > 1);
+
+  const countryOptions = useMemo(() => {
+    if (!session) return [];
+    if (isSuperAdmin) return opCountries;
+    const allowed = new Set(assignedCodes);
+    return opCountries.filter((c) => allowed.has(c.couCode));
+  }, [session, isSuperAdmin, opCountries, assignedCodes]);
+
+  const loadMasterAndAllowlist = useCallback(async () => {
+    const [allRes, allowlistRes] = await Promise.all([
+      fetch("/api/admin/flex-countries"),
+      fetch("/api/admin/country-allowlist"),
+    ]);
+    const allJson = await allRes.json();
+    const allowlistJson = await allowlistRes.json();
+    if (!allRes.ok) {
+      throw new Error(allJson.error || "Failed to load countries");
+    }
+    setRows(parseFlexRows(allJson));
+    const allowCodes =
+      (allowlistJson?.data?.couCodes as string[] | undefined) ?? [];
+    setRegistrationSelected(new Set(filterToUnlockedCodes(allowCodes)));
+  }, []);
+
+  const loadPayoutForCountry = useCallback(async (countryCode: string) => {
+    if (!countryCode) {
+      setPlatformSelected(new Set());
+      return;
+    }
+    const r = await fetch(
+      `/api/admin/catalog-countries?countryCode=${encodeURIComponent(countryCode)}`,
+      { credentials: "same-origin" },
+    );
+    const j = await r.json();
+    if (!r.ok) {
+      throw new Error(j.error || j.message || "Failed to load payout countries");
+    }
+    setPlatformSelected(
+      new Set(filterToUnlockedCodes(parseCatalogSelection(j))),
+    );
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadOpCountries() {
+      if (sessionLoading) return;
+      if (!session) {
+        setOpCountries([]);
+        setOpCountriesLoading(false);
+        return;
+      }
+      setOpCountriesLoading(true);
+      try {
+        if (isSuperAdmin) {
+          const rows = await fetchRegistrationCountries();
+          if (!cancelled) setOpCountries(rows);
+          return;
+        }
+        const res = await fetch("/api/admin/flex-countries", {
+          credentials: "same-origin",
+        });
+        const json = await res.json();
+        if (!res.ok) {
+          throw new Error(json?.error || "Failed to load countries");
+        }
+        if (!cancelled) setOpCountries(parseFlexCountryRows(json));
+      } catch {
+        if (!cancelled) setOpCountries([]);
+      } finally {
+        if (!cancelled) setOpCountriesLoading(false);
+      }
+    }
+    void loadOpCountries();
+    return () => {
+      cancelled = true;
+    };
+  }, [session, sessionLoading, isSuperAdmin]);
+
+  useEffect(() => {
+    if (!session) return;
+    if (!isSuperAdmin && assignedCodes.length === 1) {
+      setOperationCountryCode(assignedCodes[0]!);
+      return;
+    }
+    if (countryOptions.length === 0) return;
+    setOperationCountryCode((prev) => {
+      if (prev && countryOptions.some((c) => c.couCode === prev)) return prev;
+      return countryOptions[0]!.couCode;
+    });
+  }, [session, isSuperAdmin, assignedCodes, countryOptions]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setMessage(null);
     try {
-      const [allRes, allowlistRes, catalogRes] = await Promise.all([
-        fetch("/api/admin/flex-countries"),
-        fetch("/api/admin/country-allowlist"),
-        fetch("/api/admin/catalog-countries"),
-      ]);
-      const allJson = await allRes.json();
-      const allowlistJson = await allowlistRes.json();
-      const catalogJson = await catalogRes.json();
-
-      if (!allRes.ok) {
-        setMessage({
-          kind: "err",
-          text: allJson.error || "Failed to load countries",
-        });
-        setRows([]);
-        return;
+      await loadMasterAndAllowlist();
+      if (operationCountryCode) {
+        await loadPayoutForCountry(operationCountryCode);
       }
-
-      setRows(parseFlexRows(allJson));
-      const pickerCodes = new Set(parseFlexRows(allJson).map((r) => r.couCode));
-      const allowCodes =
-        (allowlistJson?.data?.couCodes as string[] | undefined) ?? [];
-      setRegistrationSelected(new Set(allowCodes.map((c) => c.toUpperCase())));
-      setPlatformSelected(
-        new Set(
-          [...parseCatalogSelection(catalogJson)].filter((c) =>
-            pickerCodes.has(c),
-          ),
-        ),
-      );
-    } catch {
-      setMessage({ kind: "err", text: "Network error" });
+    } catch (err) {
+      setMessage({
+        kind: "err",
+        text: err instanceof Error ? err.message : "Network error",
+      });
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadMasterAndAllowlist, loadPayoutForCountry, operationCountryCode]);
 
   useEffect(() => {
+    if (sessionLoading || !session) return;
     void load();
-  }, [load]);
+  }, [load, session, sessionLoading]);
+
+  useEffect(() => {
+    if (tab !== "platform" || !operationCountryCode || !session) return;
+    let cancelled = false;
+    async function reloadPayout() {
+      setLoading(true);
+      setMessage(null);
+      try {
+        await loadPayoutForCountry(operationCountryCode);
+      } catch (err) {
+        if (!cancelled) {
+          setMessage({
+            kind: "err",
+            text: err instanceof Error ? err.message : "Network error",
+          });
+          setPlatformSelected(new Set());
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void reloadPayout();
+    return () => {
+      cancelled = true;
+    };
+  }, [operationCountryCode, tab, session, loadPayoutForCountry]);
 
   async function saveRegistration() {
     if (!canEditOperationCountries) return;
     setSaving(true);
     setMessage(null);
     try {
-      const couCodes = Array.from(registrationSelected);
+      const couCodes = filterToUnlockedCodes(registrationSelected);
       const r = await fetch("/api/admin/country-allowlist", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -120,6 +223,7 @@ export function ManageCountryTabs() {
         });
         return;
       }
+      setRegistrationSelected(new Set(filterToUnlockedCodes(couCodes)));
       setMessage({
         kind: "ok",
         text:
@@ -135,16 +239,21 @@ export function ManageCountryTabs() {
   }
 
   async function savePlatform() {
+    if (!operationCountryCode) return;
     setSaving(true);
     setMessage(null);
     try {
-      const couCodes = Array.from(platformSelected).filter((c) =>
+      const couCodes = filterToUnlockedCodes(platformSelected).filter((c) =>
         rows.some((r) => r.couCode === c),
       );
       const r = await fetch("/api/admin/catalog-countries", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ couCodes }),
+        body: JSON.stringify({
+          countryCode: operationCountryCode,
+          couCodes,
+        }),
+        credentials: "same-origin",
       });
       const j = await r.json();
       if (!r.ok) {
@@ -154,13 +263,15 @@ export function ManageCountryTabs() {
         });
         return;
       }
-      setPlatformSelected(parseCatalogSelection(j));
+      setPlatformSelected(
+        new Set(filterToUnlockedCodes(parseCatalogSelection(j))),
+      );
       setMessage({
         kind: "ok",
         text:
           couCodes.length === 0
-            ? "Cleared — no payout countries are enabled."
-            : `Saved ${couCodes.length} payout countr${couCodes.length === 1 ? "y" : "ies"}.`,
+            ? `Cleared — no payout countries for ${operationCountryCode}.`
+            : `Saved ${couCodes.length} payout countr${couCodes.length === 1 ? "y" : "ies"} for ${operationCountryCode}.`,
       });
     } catch {
       setMessage({ kind: "err", text: "Network error" });
@@ -180,7 +291,7 @@ export function ManageCountryTabs() {
       id: "platform" as const,
       label: "Payout Countries",
       description:
-        "Controls the country catalog used for beneficiaries, currency pairs, tariffs, and other payment features.",
+        "Select an operation country, then enable payout destinations for customers in that country only.",
     },
   ] satisfies { id: TabId; label: string; description: string }[];
 
@@ -218,6 +329,7 @@ export function ManageCountryTabs() {
           rows={rows}
           selected={registrationSelected}
           onSelectedChange={setRegistrationSelected}
+          unlockedCodes={MANAGE_COUNTRY_UNLOCKED_SET}
           loading={loading}
           saving={saving}
           readOnly={!canEditOperationCountries}
@@ -228,30 +340,55 @@ export function ManageCountryTabs() {
           message={message}
           helperText={
             canEditOperationCountries
-              ? "Only checked countries are shown as countries of operation (e.g. customer registration). Uncheck all and save to show the full catalog again."
+              ? "Only unlocked corridors (UGA, KEN, TZA, SSD, GBR, CAN) can be toggled. Checked ones appear as countries of operation. Uncheck all and save to show the full catalog again."
               : "Only super admins can change countries of operation."
           }
           emptySelectionHint={
             canEditOperationCountries
-              ? "No selection saved — the full country catalog is shown."
+              ? "No unlocked corridors selected — the full country catalog is shown."
               : "Only super admins can change countries of operation."
           }
         />
       ) : (
-        <CountryCheckboxList
-          rows={rows}
-          selected={platformSelected}
-          onSelectedChange={setPlatformSelected}
-          loading={loading}
-          saving={saving}
-          search={search}
-          onSearchChange={setSearch}
-          onReload={() => void load()}
-          onSave={() => void savePlatform()}
-          message={message}
-          helperText="Only checked countries are enabled for payout features (beneficiaries, send money, KYC, currency pairs, etc.)."
-          emptySelectionHint="No countries enabled — payout country selectors will be empty until you select and save."
-        />
+        <div className="space-y-4">
+          {showCountrySelect ? (
+            <div className="max-w-sm">
+              <AdminCountrySelect
+                label="Country of operation"
+                value={operationCountryCode}
+                onChange={(code) => {
+                  setOperationCountryCode(code);
+                  setSearch("");
+                  setMessage(null);
+                }}
+                countries={countryOptions}
+                loading={opCountriesLoading}
+                placeholder="Select country…"
+              />
+            </div>
+          ) : null}
+          {!operationCountryCode && !opCountriesLoading ? (
+            <p className="text-sm text-slate-500">
+              No operation country available for your account.
+            </p>
+          ) : (
+            <CountryCheckboxList
+              rows={rows}
+              selected={platformSelected}
+              onSelectedChange={setPlatformSelected}
+              unlockedCodes={MANAGE_COUNTRY_UNLOCKED_SET}
+              loading={loading || opCountriesLoading}
+              saving={saving}
+              search={search}
+              onSearchChange={setSearch}
+              onReload={() => void load()}
+              onSave={() => void savePlatform()}
+              message={message}
+              helperText={`Payout destinations for ${operationCountryCode || "…"}. Only unlocked corridors can be toggled.`}
+              emptySelectionHint={`No payout countries enabled for ${operationCountryCode || "this country"} — customers from this country will see an empty destination list until you select and save.`}
+            />
+          )}
+        </div>
       )}
     </div>
   );

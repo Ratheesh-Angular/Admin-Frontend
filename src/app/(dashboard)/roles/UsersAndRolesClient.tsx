@@ -2,23 +2,35 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2 } from "lucide-react";
-import { CreateAdminModal } from "@/components/users/CreateAdminModal";
+import { Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  CreateAdminModal,
+  type CreateAdminMode,
+} from "@/components/users/CreateAdminModal";
 import { AppDialog } from "@/components/ui/AppDialog";
 import { useAdminSession } from "@/hooks/useAdminSession";
 import {
   fetchRegistrationCountries,
   type CountryRow,
 } from "@/lib/registration-countries";
+import {
+  type AdminPermissionKey,
+  type ConsoleAdminRole,
+  ROLE_LABELS,
+  canActorCreateRole,
+  isConsoleAdminRole,
+  isStaffRole,
+} from "@/lib/admin-permissions";
 
 type AdminRow = {
   id: string;
   email: string | null;
   username: string | null;
-  role: "ADMIN" | "SUPER_ADMIN";
+  role: ConsoleAdminRole;
   active: boolean;
   createdAt: string;
   countryCodes: string[];
+  permissions: AdminPermissionKey[];
 };
 
 type ConfirmAction =
@@ -31,8 +43,8 @@ type ConfirmAction =
       admin: AdminRow;
     };
 
-function formatRole(role: AdminRow["role"]) {
-  return role === "SUPER_ADMIN" ? "Super Admin" : "Admin";
+function formatRole(role: ConsoleAdminRole) {
+  return ROLE_LABELS[role] ?? role;
 }
 
 function formatDate(value: string) {
@@ -59,13 +71,36 @@ function formatCountryAccess(
 }
 
 function adminLabel(admin: AdminRow) {
-  return admin.username || admin.email || "this admin";
+  return admin.username || admin.email || "this user";
+}
+
+function parseAdminRow(raw: unknown): AdminRow | null {
+  if (!raw || typeof raw !== "object") return null;
+  const a = raw as Record<string, unknown>;
+  const roleRaw = String(a.role ?? "");
+  if (!isConsoleAdminRole(roleRaw)) return null;
+  return {
+    id: String(a.id ?? ""),
+    email: a.email == null ? null : String(a.email),
+    username: a.username == null ? null : String(a.username),
+    role: roleRaw,
+    active: Boolean(a.active),
+    createdAt: String(a.createdAt ?? ""),
+    countryCodes: Array.isArray(a.countryCodes)
+      ? a.countryCodes.map((c) => String(c).toUpperCase())
+      : [],
+    permissions: Array.isArray(a.permissions)
+      ? (a.permissions as string[]).filter(Boolean) as AdminPermissionKey[]
+      : [],
+  };
 }
 
 export function UsersAndRolesClient() {
   const router = useRouter();
-  const { session } = useAdminSession();
+  const { session, loading: sessionLoading, can } = useAdminSession();
   const isSuperAdmin = session?.role === "SUPER_ADMIN";
+  const canManage = can("users_roles");
+
   const [admins, setAdmins] = useState<AdminRow[]>([]);
   const [countryRows, setCountryRows] = useState<CountryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,12 +110,18 @@ export function UsersAndRolesClient() {
   const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(
     null,
   );
-  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<CreateAdminMode | null>(null);
+  const [editAdmin, setEditAdmin] = useState<AdminRow | null>(null);
 
   const countryByCode = useMemo(
     () => new Map(countryRows.map((c) => [c.couCode, c.couName])),
     [countryRows],
   );
+
+  const canCreateStaff =
+    session != null &&
+    (canActorCreateRole(session.role, "SUPPORT") ||
+      canActorCreateRole(session.role, "ADMIN"));
 
   const loadAdmins = useCallback(async () => {
     setLoading(true);
@@ -102,13 +143,19 @@ export function UsersAndRolesClient() {
       if (!adminsRes.ok) {
         setMessage({
           kind: "err",
-          text: data?.message || data?.error || "Failed to load admin users.",
+          text: data?.message || data?.error || "Failed to load users.",
         });
         setAdmins([]);
         return;
       }
 
-      setAdmins((data?.data?.admins as AdminRow[]) ?? []);
+      const rows = Array.isArray(data?.data?.admins)
+        ? (data.data.admins as unknown[])
+            .map(parseAdminRow)
+            .filter((r): r is AdminRow => r != null)
+        : [];
+      setAdmins(rows);
+      setAccessDenied(false);
     } catch {
       setMessage({ kind: "err", text: "Network error." });
       setAdmins([]);
@@ -118,11 +165,25 @@ export function UsersAndRolesClient() {
   }, []);
 
   useEffect(() => {
+    if (sessionLoading) return;
+    if (!canManage) {
+      setAccessDenied(true);
+      setLoading(false);
+      return;
+    }
     void loadAdmins();
-  }, [loadAdmins]);
+  }, [sessionLoading, canManage, loadAdmins]);
+
+  function canMutateRow(admin: AdminRow): boolean {
+    if (!session) return false;
+    if (admin.role === "SUPER_ADMIN") return false;
+    if (admin.id === session.id) return false;
+    if (isSuperAdmin) return true;
+    return isStaffRole(admin.role);
+  }
 
   function requestToggleActive(admin: AdminRow) {
-    if (admin.role === "SUPER_ADMIN") return;
+    if (!canMutateRow(admin)) return;
     if (admin.active) {
       setConfirmAction({ kind: "deactivate", admin });
       return;
@@ -147,7 +208,7 @@ export function UsersAndRolesClient() {
       if (!res.ok) {
         setMessage({
           kind: "err",
-          text: data?.message || data?.error || "Could not update admin status.",
+          text: data?.message || data?.error || "Could not update status.",
         });
         return;
       }
@@ -180,7 +241,7 @@ export function UsersAndRolesClient() {
       if (!res.ok) {
         setMessage({
           kind: "err",
-          text: data?.message || data?.error || "Could not delete admin user.",
+          text: data?.message || data?.error || "Could not delete user.",
         });
         return;
       }
@@ -210,25 +271,31 @@ export function UsersAndRolesClient() {
   const confirmDialog = confirmAction
     ? confirmAction.kind === "deactivate"
       ? {
-          title: "Deactivate admin?",
+          title: "Deactivate user?",
           message: `${adminLabel(confirmAction.admin)} will not be able to sign in until reactivated.`,
           confirmLabel: "Deactivate",
           destructive: true,
         }
       : {
-          title: "Delete admin permanently?",
+          title: "Delete user permanently?",
           message: `${adminLabel(confirmAction.admin)} will be removed from the console. This cannot be undone.`,
           confirmLabel: "Delete",
           destructive: true,
         }
     : null;
 
-  if (accessDenied) {
+  if (sessionLoading || (loading && !accessDenied && admins.length === 0 && !message)) {
+    return (
+      <p className="text-sm text-slate-500">Loading users and roles…</p>
+    );
+  }
+
+  if (accessDenied || !canManage || !session) {
     return (
       <div className="max-w-lg rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
         <p className="font-medium">Access restricted</p>
         <p className="mt-1 text-amber-800">
-          Only super admins can manage users and roles.
+          You do not have permission to manage users and roles.
         </p>
         <button
           type="button"
@@ -259,27 +326,51 @@ export function UsersAndRolesClient() {
         <section className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-slate-200">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Admin users</h2>
+              <h2 className="text-lg font-semibold text-slate-900">
+                Console users
+              </h2>
               <p className="text-sm text-slate-500 mt-1">
-                Manage console operators and their country access.
+                Manage operators, country access, and page permissions.
               </p>
             </div>
-            {isSuperAdmin ? (
-              <button
-                type="button"
-                onClick={() => setModalOpen(true)}
-                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-4 h-10 text-sm font-medium transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Add admin
-              </button>
+            {canCreateStaff ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {isSuperAdmin ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setModalMode("super_admin")}
+                      className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-white hover:bg-indigo-50 text-indigo-700 px-4 h-10 text-sm font-medium transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add super admin
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModalMode("admin")}
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 h-10 text-sm font-medium transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add admin
+                    </button>
+                  </>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setModalMode("staff")}
+                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-4 h-10 text-sm font-medium transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add user
+                </button>
+              </div>
             ) : null}
           </div>
 
           {loading ? (
-            <p className="px-6 py-8 text-sm text-slate-500">Loading admin users…</p>
+            <p className="px-6 py-8 text-sm text-slate-500">Loading users…</p>
           ) : admins.length === 0 ? (
-            <p className="px-6 py-8 text-sm text-slate-500">No admin users found.</p>
+            <p className="px-6 py-8 text-sm text-slate-500">No users found.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
@@ -289,17 +380,17 @@ export function UsersAndRolesClient() {
                     <th className="px-6 py-3 font-medium">Email</th>
                     <th className="px-6 py-3 font-medium">Role</th>
                     <th className="px-6 py-3 font-medium">Countries</th>
+                    <th className="px-6 py-3 font-medium">Pages</th>
                     <th className="px-6 py-3 font-medium">Status</th>
                     <th className="px-6 py-3 font-medium">Created</th>
-                    {isSuperAdmin ? (
-                      <th className="px-6 py-3 font-medium">Actions</th>
-                    ) : null}
+                    <th className="px-6 py-3 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {admins.map((admin) => {
                     const isTargetSuperAdmin = admin.role === "SUPER_ADMIN";
                     const rowBusy = actingId === admin.id;
+                    const mutable = canMutateRow(admin);
 
                     return (
                       <tr key={admin.id} className="text-slate-700">
@@ -312,7 +403,9 @@ export function UsersAndRolesClient() {
                             className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
                               isTargetSuperAdmin
                                 ? "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-600/20"
-                                : "bg-slate-100 text-slate-700"
+                                : admin.role === "ADMIN"
+                                  ? "bg-violet-50 text-violet-700 ring-1 ring-inset ring-violet-600/20"
+                                  : "bg-slate-100 text-slate-700"
                             }`}
                           >
                             {formatRole(admin.role)}
@@ -323,10 +416,15 @@ export function UsersAndRolesClient() {
                             {formatCountryAccess(admin, countryByCode)}
                           </span>
                         </td>
+                        <td className="px-6 py-3 whitespace-nowrap text-slate-600">
+                          {isTargetSuperAdmin
+                            ? "All"
+                            : `${admin.permissions.length} pages`}
+                        </td>
                         <td className="px-6 py-3">
                           {isTargetSuperAdmin ? (
                             <span className="text-slate-700">Active</span>
-                          ) : isSuperAdmin ? (
+                          ) : mutable ? (
                             <label className="inline-flex items-center gap-2 cursor-pointer">
                               <input
                                 type="checkbox"
@@ -348,11 +446,18 @@ export function UsersAndRolesClient() {
                         <td className="px-6 py-3 whitespace-nowrap">
                           {formatDate(admin.createdAt)}
                         </td>
-                        {isSuperAdmin ? (
-                          <td className="px-6 py-3">
-                            {isTargetSuperAdmin ? (
-                              <span className="text-slate-400">—</span>
-                            ) : (
+                        <td className="px-6 py-3">
+                          {mutable ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                disabled={rowBusy}
+                                onClick={() => setEditAdmin(admin)}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                                Edit
+                              </button>
                               <button
                                 type="button"
                                 disabled={rowBusy}
@@ -364,9 +469,11 @@ export function UsersAndRolesClient() {
                                 <Trash2 className="w-3.5 h-3.5" />
                                 Delete
                               </button>
-                            )}
-                          </td>
-                        ) : null}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -378,13 +485,23 @@ export function UsersAndRolesClient() {
       </div>
 
       <CreateAdminModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onCreated={async () => {
+        open={modalMode !== null || editAdmin !== null}
+        mode={modalMode ?? "staff"}
+        editAdmin={editAdmin}
+        actor={session}
+        onClose={() => {
+          setModalMode(null);
+          setEditAdmin(null);
+        }}
+        onSaved={async () => {
           setMessage({
             kind: "ok",
-            text: "Admin user created. They can sign in with their email or username.",
+            text: editAdmin
+              ? "User updated."
+              : "User created. They can sign in with their email or username.",
           });
+          setModalMode(null);
+          setEditAdmin(null);
           await loadAdmins();
         }}
       />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { FlexLogo } from "@/components/brand/FlexLogo";
@@ -14,26 +14,42 @@ import {
   CreditCard,
   ChevronDown,
   ChevronRight,
-  Coins,
   Wallet,
 } from "lucide-react";
-
-const usersKycNav = {
-  label: "Users KYC",
-  icon: UserCheck,
-  basePath: "/personal-users",
-  items: [
-    { label: "Personal Users", href: "/personal-users" },
-    { label: "Corporate Users", href: "/corporate-users" },
-    { label: "Remittance Partners", href: "/remittance-partners" },
-  ],
-} as const;
+import { useAdminSession } from "@/hooks/useAdminSession";
+import {
+  type AdminPermissionKey,
+  ROLE_LABELS,
+  permissionForPath,
+} from "@/lib/admin-permissions";
 
 const HIDDEN_RATE_SETTINGS_HREFS = new Set([
   "/rate-settings/partners-rate-engine",
 ]);
 
 const HIDDEN_USERS_KYC_HREFS = new Set(["/remittance-partners"]);
+
+const usersKycNav = {
+  label: "Users KYC",
+  icon: UserCheck,
+  items: [
+    {
+      label: "Personal Users",
+      href: "/personal-users",
+      permission: "personal_users" as AdminPermissionKey,
+    },
+    {
+      label: "Corporate Users",
+      href: "/corporate-users",
+      permission: "corporate_users" as AdminPermissionKey,
+    },
+    {
+      label: "Remittance Partners",
+      href: "/remittance-partners",
+      permission: "personal_users" as AdminPermissionKey,
+    },
+  ],
+};
 
 const rateSettingsNav = {
   label: "Rate settings",
@@ -43,16 +59,25 @@ const rateSettingsNav = {
     {
       label: "Currency Pair",
       href: "/rate-settings/currency-pair",
-      superAdminOnly: true,
+      permission: "currency_pair" as AdminPermissionKey,
     },
-    { label: "Exchange rates", href: "/rate-settings/exchange-rates" },
+    {
+      label: "Exchange rates",
+      href: "/rate-settings/exchange-rates",
+      permission: "exchange_rates" as AdminPermissionKey,
+    },
     {
       label: "Partners Rate Engine",
       href: "/rate-settings/partners-rate-engine",
+      permission: "exchange_rates" as AdminPermissionKey,
     },
-    { label: "Tariffs", href: "/rate-settings/tariffs" },
+    {
+      label: "Tariffs",
+      href: "/rate-settings/tariffs",
+      permission: "tariffs" as AdminPermissionKey,
+    },
   ],
-} as const;
+};
 
 const paymentsNav = {
   label: "Remittance",
@@ -62,13 +87,42 @@ const paymentsNav = {
     {
       label: "Outbound List (Individuals)",
       href: "/payments/outbound/individuals",
+      permission: "remittance_individuals" as AdminPermissionKey,
     },
     {
       label: "Outbound List (Corporates)",
       href: "/payments/outbound/corporates",
+      permission: "remittance_corporates" as AdminPermissionKey,
     },
   ],
-} as const;
+};
+
+const paymentSettingsNav = {
+  label: "Payment settings",
+  icon: Wallet,
+  items: [
+    {
+      label: "Source Currency",
+      href: "/source-currency",
+      permission: "source_currency" as AdminPermissionKey,
+    },
+    {
+      label: "Recipient Currency",
+      href: "/recipient-currency",
+      permission: "recipient_currency" as AdminPermissionKey,
+    },
+    {
+      label: "Pay-in Methods",
+      href: "/pay-in-methods",
+      permission: "pay_in_methods" as AdminPermissionKey,
+    },
+    {
+      label: "Card Fees",
+      href: "/card-fees",
+      permission: "card_fees" as AdminPermissionKey,
+    },
+  ],
+};
 
 function navLinkClass(active: boolean) {
   return `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
@@ -103,12 +157,12 @@ export default function AdminDashboardLayoutClient({
   const [usersKycOpen, setUsersKycOpen] = useState(false);
   const [rateSettingsOpen, setRateSettingsOpen] = useState(false);
   const [paymentsOpen, setPaymentsOpen] = useState(false);
-  const [adminLabel, setAdminLabel] = useState("Administrator");
-  const [adminRole, setAdminRole] = useState<"ADMIN" | "SUPER_ADMIN" | null>(
-    null,
-  );
+  const [paymentSettingsOpen, setPaymentSettingsOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
+  const { session, loading: sessionLoading, can } = useAdminSession();
+
+  const [displayLabel, setDisplayLabel] = useState("Administrator");
 
   useEffect(() => {
     let cancelled = false;
@@ -121,12 +175,8 @@ export default function AdminDashboardLayoutClient({
           data?.data?.admin?.email ||
           data?.data?.admin?.username ||
           data?.data?.admin?.name;
-        const role = data?.data?.admin?.role;
         if (!cancelled && typeof label === "string" && label.trim()) {
-          setAdminLabel(label.trim());
-        }
-        if (!cancelled && (role === "ADMIN" || role === "SUPER_ADMIN")) {
-          setAdminRole(role);
+          setDisplayLabel(label.trim());
         }
       } catch {
         /* ignore */
@@ -137,29 +187,74 @@ export default function AdminDashboardLayoutClient({
     };
   }, []);
 
+  const usersKycItems = useMemo(
+    () =>
+      usersKycNav.items.filter(
+        (sub) =>
+          !HIDDEN_USERS_KYC_HREFS.has(sub.href) && can(sub.permission),
+      ),
+    [can],
+  );
+
+  const remittanceItems = useMemo(
+    () => paymentsNav.items.filter((sub) => can(sub.permission)),
+    [can],
+  );
+
+  const rateItems = useMemo(
+    () =>
+      rateSettingsNav.items.filter(
+        (sub) =>
+          !HIDDEN_RATE_SETTINGS_HREFS.has(sub.href) && can(sub.permission),
+      ),
+    [can],
+  );
+
+  const paymentSettingsItems = useMemo(
+    () => paymentSettingsNav.items.filter((sub) => can(sub.permission)),
+    [can],
+  );
+
+  const showDashboard = can("dashboard");
+  const showManageCountry = can("manage_country");
+  const showUsersRoles = can("users_roles");
+
   const isUsersKycActive =
     pathname.startsWith("/personal-users") ||
     pathname.startsWith("/corporate-users");
   const isRateSettingsActive = pathname.startsWith(rateSettingsNav.basePath);
   const isPaymentsActive = pathname.startsWith(paymentsNav.basePath);
+  const isPaymentSettingsActive = paymentSettingsNav.items.some(
+    (item) =>
+      pathname === item.href || pathname.startsWith(`${item.href}/`),
+  );
 
   useEffect(() => {
-    if (isUsersKycActive) {
-      setUsersKycOpen(true);
-    }
+    if (isUsersKycActive) setUsersKycOpen(true);
   }, [isUsersKycActive]);
 
   useEffect(() => {
-    if (isRateSettingsActive) {
-      setRateSettingsOpen(true);
-    }
+    if (isRateSettingsActive) setRateSettingsOpen(true);
   }, [isRateSettingsActive]);
 
   useEffect(() => {
-    if (isPaymentsActive) {
-      setPaymentsOpen(true);
-    }
+    if (isPaymentsActive) setPaymentsOpen(true);
   }, [isPaymentsActive]);
+
+  useEffect(() => {
+    if (isPaymentSettingsActive) setPaymentSettingsOpen(true);
+  }, [isPaymentSettingsActive]);
+
+  // Soft client-side gate: redirect if current path requires a missing permission
+  useEffect(() => {
+    if (sessionLoading || !session) return;
+    const required = permissionForPath(pathname);
+    if (!required) return;
+    if (!can(required)) {
+      const fallback = can("dashboard") ? "/dashboard" : "/login";
+      router.replace(fallback);
+    }
+  }, [sessionLoading, session, pathname, can, router]);
 
   async function handleSignOut() {
     await fetch("/api/auth/session", {
@@ -174,15 +269,10 @@ export default function AdminDashboardLayoutClient({
     pathname === "/dashboard" || pathname.startsWith("/dashboard/");
   const isManageCountryActive =
     pathname === "/manage-country" || pathname.startsWith("/manage-country/");
-  const isSourceCurrencyActive =
-    pathname === "/source-currency" || pathname.startsWith("/source-currency/");
-  const isPayInMethodsActive =
-    pathname === "/pay-in-methods" || pathname.startsWith("/pay-in-methods/");
   const isRolesActive = pathname === "/roles" || pathname.startsWith("/roles/");
 
-  const roleLabel = adminRole === "SUPER_ADMIN" ? "Super Admin" : "Admin";
-
-  const avatarInitial = adminLabel[0]?.toUpperCase() || "A";
+  const roleLabel = session ? ROLE_LABELS[session.role] : "Admin";
+  const avatarInitial = displayLabel[0]?.toUpperCase() || "A";
 
   return (
     <div className="min-h-screen bg-slate-50 flex">
@@ -204,124 +294,40 @@ export default function AdminDashboardLayoutClient({
         </div>
 
         <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
-          <Link
-            href="/dashboard"
-            onClick={() => setSidebarOpen(false)}
-            className={navLinkClass(isDashboardActive)}
-          >
-            <span className="text-base shrink-0">
-              <LayoutDashboard className="w-5 h-5" />
-            </span>
-            Dashboard
-          </Link>
-
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={() => setUsersKycOpen((open) => !open)}
-              className={submenuButtonClass(isUsersKycActive)}
+          {showDashboard ? (
+            <Link
+              href="/dashboard"
+              onClick={() => setSidebarOpen(false)}
+              className={navLinkClass(isDashboardActive)}
             >
               <span className="text-base shrink-0">
-                <usersKycNav.icon className="w-5 h-5" />
+                <LayoutDashboard className="w-5 h-5" />
               </span>
-              <span className="flex-1 text-left">{usersKycNav.label}</span>
+              Dashboard
+            </Link>
+          ) : null}
+
+          {usersKycItems.length > 0 ? (
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setUsersKycOpen((open) => !open)}
+                className={submenuButtonClass(isUsersKycActive)}
+              >
+                <span className="text-base shrink-0">
+                  <usersKycNav.icon className="w-5 h-5" />
+                </span>
+                <span className="flex-1 text-left">{usersKycNav.label}</span>
+                {usersKycOpen ? (
+                  <ChevronDown className="w-4 h-4 shrink-0 text-slate-400" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" />
+                )}
+              </button>
+
               {usersKycOpen ? (
-                <ChevronDown className="w-4 h-4 shrink-0 text-slate-400" />
-              ) : (
-                <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" />
-              )}
-            </button>
-
-            {usersKycOpen && (
-              <div className="mt-1 ml-4 pl-3 border-l border-slate-200 space-y-0.5">
-                {usersKycNav.items
-                  .filter((sub) => !HIDDEN_USERS_KYC_HREFS.has(sub.href))
-                  .map((sub) => {
-                  const isSubActive =
-                    pathname === sub.href ||
-                    pathname.startsWith(`${sub.href}/`);
-
-                  return (
-                    <Link
-                      key={sub.href}
-                      href={sub.href}
-                      onClick={() => setSidebarOpen(false)}
-                      className={submenuLinkClass(isSubActive)}
-                    >
-                      {sub.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={() => setPaymentsOpen((open) => !open)}
-              className={submenuButtonClass(isPaymentsActive)}
-            >
-              <span className="text-base shrink-0">
-                <paymentsNav.icon className="w-5 h-5" />
-              </span>
-              <span className="flex-1 text-left">{paymentsNav.label}</span>
-              {paymentsOpen ? (
-                <ChevronDown className="w-4 h-4 shrink-0 text-slate-400" />
-              ) : (
-                <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" />
-              )}
-            </button>
-
-            {paymentsOpen && (
-              <div className="mt-1 ml-4 pl-3 border-l border-slate-200 space-y-0.5">
-                {paymentsNav.items.map((sub) => {
-                  const isSubActive =
-                    pathname === sub.href ||
-                    pathname.startsWith(`${sub.href}/`);
-
-                  return (
-                    <Link
-                      key={sub.href}
-                      href={sub.href}
-                      onClick={() => setSidebarOpen(false)}
-                      className={submenuLinkClass(isSubActive)}
-                    >
-                      {sub.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={() => setRateSettingsOpen((open) => !open)}
-              className={submenuButtonClass(isRateSettingsActive)}
-            >
-              <span className="text-base shrink-0">
-                <rateSettingsNav.icon className="w-5 h-5" />
-              </span>
-              <span className="flex-1 text-left">{rateSettingsNav.label}</span>
-              {rateSettingsOpen ? (
-                <ChevronDown className="w-4 h-4 shrink-0 text-slate-400" />
-              ) : (
-                <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" />
-              )}
-            </button>
-
-            {rateSettingsOpen && (
-              <div className="mt-1 ml-4 pl-3 border-l border-slate-200 space-y-0.5">
-                {rateSettingsNav.items
-                  .filter(
-                    (sub) =>
-                      !HIDDEN_RATE_SETTINGS_HREFS.has(sub.href) &&
-                      (!("superAdminOnly" in sub && sub.superAdminOnly) ||
-                        adminRole === "SUPER_ADMIN"),
-                  )
-                  .map((sub) => {
+                <div className="mt-1 ml-4 pl-3 border-l border-slate-200 space-y-0.5">
+                  {usersKycItems.map((sub) => {
                     const isSubActive =
                       pathname === sub.href ||
                       pathname.startsWith(`${sub.href}/`);
@@ -337,44 +343,150 @@ export default function AdminDashboardLayoutClient({
                       </Link>
                     );
                   })}
-              </div>
-            )}
-          </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
-          <Link
-            href="/manage-country"
-            onClick={() => setSidebarOpen(false)}
-            className={navLinkClass(isManageCountryActive)}
-          >
-            <span className="text-base shrink-0">
-              <Globe className="w-5 h-5" />
-            </span>
-            Manage Country
-          </Link>
+          {remittanceItems.length > 0 ? (
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setPaymentsOpen((open) => !open)}
+                className={submenuButtonClass(isPaymentsActive)}
+              >
+                <span className="text-base shrink-0">
+                  <paymentsNav.icon className="w-5 h-5" />
+                </span>
+                <span className="flex-1 text-left">{paymentsNav.label}</span>
+                {paymentsOpen ? (
+                  <ChevronDown className="w-4 h-4 shrink-0 text-slate-400" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" />
+                )}
+              </button>
 
-          <Link
-            href="/source-currency"
-            onClick={() => setSidebarOpen(false)}
-            className={navLinkClass(isSourceCurrencyActive)}
-          >
-            <span className="text-base shrink-0">
-              <Coins className="w-5 h-5" />
-            </span>
-            Source Currency
-          </Link>
+              {paymentsOpen ? (
+                <div className="mt-1 ml-4 pl-3 border-l border-slate-200 space-y-0.5">
+                  {remittanceItems.map((sub) => {
+                    const isSubActive =
+                      pathname === sub.href ||
+                      pathname.startsWith(`${sub.href}/`);
 
-          <Link
-            href="/pay-in-methods"
-            onClick={() => setSidebarOpen(false)}
-            className={navLinkClass(isPayInMethodsActive)}
-          >
-            <span className="text-base shrink-0">
-              <Wallet className="w-5 h-5" />
-            </span>
-            Pay-in Methods
-          </Link>
+                    return (
+                      <Link
+                        key={sub.href}
+                        href={sub.href}
+                        onClick={() => setSidebarOpen(false)}
+                        className={submenuLinkClass(isSubActive)}
+                      >
+                        {sub.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
-          {adminRole === "SUPER_ADMIN" ? (
+          {rateItems.length > 0 ? (
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setRateSettingsOpen((open) => !open)}
+                className={submenuButtonClass(isRateSettingsActive)}
+              >
+                <span className="text-base shrink-0">
+                  <rateSettingsNav.icon className="w-5 h-5" />
+                </span>
+                <span className="flex-1 text-left">{rateSettingsNav.label}</span>
+                {rateSettingsOpen ? (
+                  <ChevronDown className="w-4 h-4 shrink-0 text-slate-400" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" />
+                )}
+              </button>
+
+              {rateSettingsOpen ? (
+                <div className="mt-1 ml-4 pl-3 border-l border-slate-200 space-y-0.5">
+                  {rateItems.map((sub) => {
+                    const isSubActive =
+                      pathname === sub.href ||
+                      pathname.startsWith(`${sub.href}/`);
+
+                    return (
+                      <Link
+                        key={sub.href}
+                        href={sub.href}
+                        onClick={() => setSidebarOpen(false)}
+                        className={submenuLinkClass(isSubActive)}
+                      >
+                        {sub.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {showManageCountry ? (
+            <Link
+              href="/manage-country"
+              onClick={() => setSidebarOpen(false)}
+              className={navLinkClass(isManageCountryActive)}
+            >
+              <span className="text-base shrink-0">
+                <Globe className="w-5 h-5" />
+              </span>
+              Manage Country
+            </Link>
+          ) : null}
+
+          {paymentSettingsItems.length > 0 ? (
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setPaymentSettingsOpen((open) => !open)}
+                className={submenuButtonClass(isPaymentSettingsActive)}
+              >
+                <span className="text-base shrink-0">
+                  <paymentSettingsNav.icon className="w-5 h-5" />
+                </span>
+                <span className="flex-1 text-left">
+                  {paymentSettingsNav.label}
+                </span>
+                {paymentSettingsOpen ? (
+                  <ChevronDown className="w-4 h-4 shrink-0 text-slate-400" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" />
+                )}
+              </button>
+
+              {paymentSettingsOpen ? (
+                <div className="mt-1 ml-4 pl-3 border-l border-slate-200 space-y-0.5">
+                  {paymentSettingsItems.map((sub) => {
+                    const isSubActive =
+                      pathname === sub.href ||
+                      pathname.startsWith(`${sub.href}/`);
+
+                    return (
+                      <Link
+                        key={sub.href}
+                        href={sub.href}
+                        onClick={() => setSidebarOpen(false)}
+                        className={submenuLinkClass(isSubActive)}
+                      >
+                        {sub.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {showUsersRoles ? (
             <Link
               href="/roles"
               onClick={() => setSidebarOpen(false)}
@@ -420,7 +532,7 @@ export default function AdminDashboardLayoutClient({
               </div>
               <div className="min-w-0 hidden sm:block">
                 <p className="text-sm font-medium text-slate-900 truncate max-w-[12rem] md:max-w-[16rem]">
-                  {adminLabel}
+                  {displayLabel}
                 </p>
                 <p className="text-xs text-slate-500 truncate">{roleLabel}</p>
               </div>

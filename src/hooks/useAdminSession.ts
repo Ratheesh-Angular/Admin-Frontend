@@ -2,11 +2,19 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { AdminScopeClient } from "@/lib/admin-currency-pair-access";
+import {
+  type AdminPermissionKey,
+  type ConsoleAdminRole,
+  effectivePermissions,
+  hasPermission,
+  isConsoleAdminRole,
+} from "@/lib/admin-permissions";
 
 export type AdminSession = {
   id: string;
-  role: "SUPER_ADMIN" | "ADMIN";
+  role: ConsoleAdminRole;
   countryCodes: string[];
+  permissions: AdminPermissionKey[];
 };
 
 export function useAdminSession() {
@@ -27,12 +35,22 @@ export function useAdminSession() {
         setSession(null);
         return;
       }
+      const roleRaw = String(admin.role ?? "");
+      const role: ConsoleAdminRole = isConsoleAdminRole(roleRaw)
+        ? roleRaw
+        : "ADMIN";
+      const countryCodes = Array.isArray(admin.countryCodes)
+        ? admin.countryCodes.map((c: string) => String(c).trim().toUpperCase())
+        : [];
+      const permissions = effectivePermissions(
+        role,
+        Array.isArray(admin.permissions) ? admin.permissions : [],
+      );
       setSession({
         id: String(admin.id ?? ""),
-        role: admin.role === "SUPER_ADMIN" ? "SUPER_ADMIN" : "ADMIN",
-        countryCodes: Array.isArray(admin.countryCodes)
-          ? admin.countryCodes.map((c: string) => String(c).trim().toUpperCase())
-          : [],
+        role,
+        countryCodes,
+        permissions,
       });
     } catch {
       setSession(null);
@@ -49,5 +67,13 @@ export function useAdminSession() {
     ? { role: session.role, countryCodes: session.countryCodes }
     : null;
 
-  return { session, scope, loading, reload: load };
+  const can = useCallback(
+    (key: AdminPermissionKey) => {
+      if (!session) return false;
+      return hasPermission(session.role, session.permissions, key);
+    },
+    [session],
+  );
+
+  return { session, scope, loading, reload: load, can };
 }
